@@ -128,7 +128,7 @@ class VFATFSDirImpl : public DirImpl {
 	}
 
 	size_t entrySize() const override {
-		return entryStats.fname[0]? entryStats.fsize : NULL;
+		return entryStats.fname[0]? entryStats.fsize : 0;
 	}
 
 	time_t entryMtime() const override;

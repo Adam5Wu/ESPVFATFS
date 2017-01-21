@@ -1,0 +1,17 @@
+{
+  "name":"ESP VFATFS",
+  "description":"ESP8266 Arduino file system wrapper for FATFS",
+  "keywords":"esp8266,fatfs,fs,vfat",
+  "authors":
+  {
+    "name": "Zhenyu Wu",
+    "maintainer": true
+  },
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/Adam5Wu/ESPVFATFS.git"
+  },
+  "frameworks": "arduino",
+  "platforms":"espressif",
+}

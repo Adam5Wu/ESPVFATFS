@@ -1,4 +1,9 @@
 # ESPVFATFS
+[![Build Status](https://travis-ci.org/Adam5Wu/ESPVFATFS.svg?branch=master)](https://travis-ci.org/Adam5Wu/ESPVFATFS)
+[![GitHub issues](https://img.shields.io/github/issues/Adam5Wu/ESPVFATFS.svg)](https://github.com/Adam5Wu/ESPVFATFS/issues)
+[![GitHub forks](https://img.shields.io/github/forks/Adam5Wu/ESPVFATFS.svg)](https://github.com/Adam5Wu/ESPVFATFS/network)
+[![License](https://img.shields.io/github/license/Adam5Wu/ESPVFATFS.svg)](./LICENSE)
+
 
 FATFS on internal flash for ESP8266 Arduino
 
@@ -6,7 +11,7 @@ FATFS on internal flash for ESP8266 Arduino
 
 ESP8266 is a nice little device, capable of running [nearly full featured Web server](https://github.com/me-no-dev/ESPAsyncWebServer), providing relatively rich user experiences.
 
-Some versions of device has up to 32MB of internal flash storage, which can be used to hold almost all resources it needs to serve, making it a self-contained, ultra-portable Web server.
+Some versions of device has up to 16MB of internal flash storage, which can pretty much hold all resources it needs to serve, making it a self-contained, ultra-portable Web server.
 
 However, currently Arduino for ESP8266 provides only SPIFFS as backing file system, which lacks several important features:
 - Real directories

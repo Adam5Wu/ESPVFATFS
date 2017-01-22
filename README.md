@@ -4,6 +4,11 @@
 [![GitHub forks](https://img.shields.io/github/forks/Adam5Wu/ESPVFATFS.svg)](https://github.com/Adam5Wu/ESPVFATFS/network)
 [![License](https://img.shields.io/github/license/Adam5Wu/ESPVFATFS.svg)](./LICENSE)
 
+* Requires:
+	- [ESP8266 Arduino Core Fork](https://github.com/Adam5Wu/Arduino)
+* Potentially interesting:
+	- [ESPAsyncWebServer fork](https://github.com/Adam5Wu/ESPAsyncWebServer)
+	- [esp8266FTPServer fork](https://github.com/Adam5Wu/esp8266FTPServer)
 
 FATFS on internal flash for ESP8266 Arduino
 

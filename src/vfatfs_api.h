@@ -29,7 +29,7 @@
 #include "fatfs/ff.h"
 #include "debug.h"
 
-#define VFATFS_PHYS_BLOCK			4096
+#define VFATFS_PHYS_BLOCK		 	4096
 #define VFATFS_SECT_PER_PHYS	1			// HAL layer does not handle partial erase
 #define VFATFS_SECTOR_SIZE		(VFATFS_PHYS_BLOCK/VFATFS_SECT_PER_PHYS)
 

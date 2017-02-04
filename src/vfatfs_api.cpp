@@ -105,6 +105,9 @@ bool normalizePath(const char* in, String& out) {
 
 // these symbols should be defined in the linker script for each flash layout
 #ifdef ARDUINO
+
+#include <Arduino.h>
+
 extern "C" uint32_t _SPIFFS_start;
 extern "C" uint32_t _SPIFFS_end;
 

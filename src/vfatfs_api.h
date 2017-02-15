@@ -136,7 +136,7 @@ class VFATFSDirImpl : public DirImpl {
 	bool isDir(const char* path) const override;
 
 	const char* name() const override {
-			return _pathname.c_str();
+		return _pathname.c_str();
 	}
 
 	time_t mtime() const override;

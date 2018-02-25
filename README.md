@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/Adam5Wu/ESPVFATFS.svg)](./LICENSE)
 
 * Requires:
-	- [ESP8266 Arduino Core Fork](https://github.com/Adam5Wu/Arduino)
+	- [ESP8266 Arduino Core Fork](https://github.com/Adam5Wu/Arduino-esp8266)
 * Potentially interesting:
 	- [ESPAsyncWebServer fork](https://github.com/Adam5Wu/ESPAsyncWebServer)
 	- [esp8266FTPServer fork](https://github.com/Adam5Wu/esp8266FTPServer)

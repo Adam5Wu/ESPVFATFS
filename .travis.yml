@@ -19,7 +19,7 @@ script:
   - ARDUINOSDK="$ARDUINOIDE"/hardware/esp8266com
   - mkdir -p "$ARDUINOSDK" && (
       cd "$ARDUINOSDK" &&
-      git clone -q https://github.com/Adam5Wu/Arduino.git esp8266 ) &
+      git clone -q https://github.com/Adam5Wu/Arduino-esp8266.git esp8266 ) &
   - wait && export PATH="$ARDUINOIDE:$PATH"
   - ( cd "$ARDUINOSDK"/esp8266/tools && python get.py ) &
   - export SKETCHBOOK=`arduino --get-pref sketchbook.path`

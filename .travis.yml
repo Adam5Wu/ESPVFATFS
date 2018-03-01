@@ -8,6 +8,7 @@ script:
   - ARDUINOVER=arduino-1.6.8
   - THISSKETCH=libraries/ESPVFATFS
   - LIBREPOS=(
+      https://github.com/Adam5Wu/ZWUtils-Arduino
     )
   - ( cd "$HOME" &&
       wget -q "http://downloads.arduino.cc/${ARDUINOVER}-linux64.tar.xz" &&

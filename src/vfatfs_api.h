@@ -26,8 +26,41 @@
 #include "FS.h"
 
 #include "FSImpl.h"
+#include "Misc.h"
+
+#ifndef ESPFAT_LOG
+	#define ESPFAT_LOG(...) ESPZW_LOG(__VA_ARGS__)
+#endif
+
+#ifndef ESPFAT_DEBUG_LEVEL
+	#define ESPFAT_DEBUG_LEVEL ESPZW_DEBUG_LEVEL
+#endif
+
+#if ESPFAT_DEBUG_LEVEL < 1
+	#define ESPFAT_DEBUGDO(...)
+	#define ESPFAT_DEBUG(...)
+	#else
+	#define ESPFAT_DEBUGDO(...) __VA_ARGS__
+	#define ESPFAT_DEBUG(...) ESPFAT_LOG(__VA_ARGS__)
+#endif
+
+#if ESPFAT_DEBUG_LEVEL < 2
+	#define ESPFAT_DEBUGVDO(...)
+	#define ESPFAT_DEBUGV(...)
+	#else
+	#define ESPFAT_DEBUGVDO(...) __VA_ARGS__
+	#define ESPFAT_DEBUGV(...) ESPFAT_LOG(__VA_ARGS__)
+#endif
+
+#if ESPFAT_DEBUG_LEVEL < 3
+	#define ESPFAT_DEBUGVVDO(...)
+	#define ESPFAT_DEBUGVV(...)
+	#else
+	#define ESPFAT_DEBUGVVDO(...) __VA_ARGS__
+	#define ESPFAT_DEBUGVV(...) ESPFAT_LOG(__VA_ARGS__)
+#endif
+
 #include "fatfs/ff.h"
-#include "debug.h"
 
 #define VFATFS_PHYS_BLOCK		 	4096
 #define VFATFS_SECT_PER_PHYS	1			// HAL layer does not handle partial erase

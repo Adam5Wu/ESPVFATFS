@@ -6,6 +6,7 @@
 
 * Requires:
 	- [ESP8266 Arduino Core Fork](https://github.com/Adam5Wu/Arduino-esp8266)
+	- [ZWUtils-Arduino](https://github.com/Adam5Wu/ZWUtils-Arduino)
 * Potentially interesting:
 	- [ESPAsyncWebServer fork](https://github.com/Adam5Wu/ESPAsyncWebServer)
 	- [esp8266FTPServer fork](https://github.com/Adam5Wu/esp8266FTPServer)

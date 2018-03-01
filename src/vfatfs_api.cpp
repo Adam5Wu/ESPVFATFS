@@ -33,9 +33,9 @@ void fattime2unixts(time_t &ts, uint16_t time, uint16_t date) {
 	tpart.tm_min = (time >> 5) & 0x3f;
 	tpart.tm_sec = (time & 0x1f) << 1;
 
-	DEBUGV("[VFATFS##fattime2unixts] %d-%02d-%02d %02d:%02d:%02d\n",
-					tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
-					tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
+	ESPFAT_DEBUGV("[VFATFS##fattime2unixts] %d-%02d-%02d %02d:%02d:%02d\n",
+		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
+		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 	ts = mktime(&tpart);
 }
 
@@ -44,20 +44,20 @@ void unixts2fattime(time_t ts, uint16_t &time, uint16_t &date) {
 	struct tm tpart;
 	gmtime_r(&ts, &tpart);
 
-	DEBUGV("[VFATFS##unixts2fattime] %d-%02d-%02d %02d:%02d:%02d\n",
-					tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
-					tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
+	ESPFAT_DEBUGV("[VFATFS##unixts2fattime] %d-%02d-%02d %02d:%02d:%02d\n",
+		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
+		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 
 	time = tpart.tm_hour << 11 | tpart.tm_min << 5 | tpart.tm_sec >> 1;
 	date = (tpart.tm_year - 80) << 9 | (tpart.tm_mon + 1) << 5 | tpart.tm_mday;
 }
 
 bool normalizePath(const char* in, String& out) {
-	DEBUGV("[VFATFS##normalizePath] Input '%s'\n",in);
+	ESPFAT_DEBUGV("[VFATFS##normalizePath] Input '%s'\n",in);
 
 	// All path must start from root
 	if (*in != '/') {
-		DEBUGV("[VFATFS##normalizePath] Not from root\n");
+		ESPFAT_DEBUG("[VFATFS##normalizePath] Not from root\n");
 		return false;
 	}
 
@@ -78,7 +78,7 @@ bool normalizePath(const char* in, String& out) {
 				continue;
 			if ((toks[idx][1] == '.') && !toks[idx][2]) {
 				if (!idx) {
-					DEBUGV("[VFATFS##normalizePath] Token underflow\n");
+					ESPFAT_DEBUG("[VFATFS##normalizePath] Token underflow\n");
 					return false;
 				}
 				idx--;
@@ -89,14 +89,14 @@ bool normalizePath(const char* in, String& out) {
 	}
 	// Check token overflow
 	if (ptr && *ptr) {
-		DEBUGV("[VFATFS##normalizePath] Token overflow\n");
+		ESPFAT_DEBUG("[VFATFS##normalizePath] Token overflow\n");
 		return false;
 	}
 	out = idx? "" : "/";
 	for (uint8_t i=0; i<idx; i++)
 		(out+= '/')+= toks[i];
 
-	DEBUGV("[VFATFS##normalizePath] Output '%s'\n",out.c_str());
+	ESPFAT_DEBUGV("[VFATFS##normalizePath] Output '%s'\n",out.c_str());
 	return true;
 }
 
@@ -160,7 +160,7 @@ DRESULT disk_read (
 	uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
 	uint32_t size = count * VFATFS_SECTOR_SIZE;
 
-	DEBUGV("[VFATF##disk_read] R 0x%lX 0x%X\r\n", addr, size);
+	ESPFAT_DEBUGV("[VFATF##disk_read] R 0x%lX 0x%X\n", addr, size);
 	int32_t ret = spiffs_hal_read(addr, size, buff);
 	return ret == SPIFFS_OK? RES_OK : RES_ERROR;
 }
@@ -181,11 +181,11 @@ DRESULT disk_write (
 	uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
 	uint32_t size = count * VFATFS_SECTOR_SIZE;
 
-	DEBUGV("[VFATFS##disk_write] E 0x%lX 0x%X\r\n", addr, size);
+	ESPFAT_DEBUGV("[VFATFS##disk_write] E 0x%lX 0x%X\n", addr, size);
 	int32_t ret = spiffs_hal_erase(addr, size);
 	if (ret != SPIFFS_OK)
 		return RES_ERROR;
-	DEBUGV("[VFATFS##disk_write] W 0x%lX 0x%X\r\n", addr, size);
+	ESPFAT_DEBUGV("[VFATFS##disk_write] W 0x%lX 0x%X\n", addr, size);
 	ret = spiffs_hal_write(addr, size, const_cast<uint8_t*>(buff));
 	return ret == SPIFFS_OK? RES_OK : RES_ERROR;
 }
@@ -211,17 +211,17 @@ DRESULT disk_ioctl (
 		case GET_SECTOR_COUNT:
 			*((DWORD*)buff) = VFATFS_PHYS_SIZE / VFATFS_SECTOR_SIZE;
 			return RES_OK;
-			
+
 		case GET_SECTOR_SIZE:
 			*((DWORD*)buff) = VFATFS_SECTOR_SIZE;
 			return RES_OK;
-		
+
 		case GET_BLOCK_SIZE:
 			*((DWORD*)buff) = VFATFS_SECT_PER_PHYS; // erase block size in units of sector size
 			return RES_OK;
 	}
 
-	DEBUGV("[VFATFS##disk_ioctl] Unhandled %d\r\n", cmd);
+	ESPFAT_DEBUG("[VFATFS##disk_ioctl] Unhandled %d\n", cmd);
 	return RES_PARERR;
 }
 
@@ -244,7 +244,7 @@ using namespace fs;
 FileImplPtr VFATFSImpl::open(const char* path, OpenMode openMode, AccessMode accessMode) {
 	String normPath;
 	if (!normalizePath(path, normPath)) {
-		DEBUGV("[VFATFSImpl::open] Invalid path\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::open] Invalid path\n");
 		return FileImplPtr();
 	}
 
@@ -263,7 +263,7 @@ FileImplPtr VFATFSImpl::open(const char* path, OpenMode openMode, AccessMode acc
 	FIL fd{0};
 	FRESULT res = f_open(&fd, normPath.c_str(), open_mode);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::open] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::open] Error %d\n", res);
 		return FileImplPtr();
 	}
 	return std::make_shared<VFATFSFileImpl>(*this, fd, normPath.c_str());
@@ -272,7 +272,7 @@ FileImplPtr VFATFSImpl::open(const char* path, OpenMode openMode, AccessMode acc
 DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 	String normPath;
 	if (!normalizePath(path, normPath)) {
-		DEBUGV("[VFATFSImpl::openDir] Invalid path\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::openDir] Invalid path\n");
 		return DirImplPtr();
 	}
 
@@ -286,7 +286,7 @@ DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 		}
 	}
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::opendir] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::opendir] Error %d\n", res);
 		return DirImplPtr();
 	}
 	return std::make_shared<VFATFSDirImpl>(*this, fd, normPath.c_str());
@@ -295,12 +295,12 @@ DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 bool VFATFSImpl::rename(const char* pathFrom, const char* pathTo) {
 	String normPathFrom;
 	if (!normalizePath(pathFrom, normPathFrom)) {
-		DEBUGV("[VFATFSImpl::rename] Invalid path from\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::rename] Invalid path from\n");
 		return false;
 	}
 	String normPathTo;
 	if (!normalizePath(pathTo, normPathTo)) {
-		DEBUGV("[VFATFSImpl::rename] Invalid path to\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::rename] Invalid path to\n");
 		return false;
 	}
 	if (normPathFrom == normPathTo)
@@ -310,14 +310,14 @@ bool VFATFSImpl::rename(const char* pathFrom, const char* pathTo) {
 	if (res == FR_EXIST) {
 		res = f_unlink(normPathTo.c_str());
 		if (res != FR_OK) {
-			DEBUGV("[VFATFSImpl::rename] Unable to remove existing path=`%s`\r\n", normPathTo.c_str());
+			ESPFAT_DEBUG("[VFATFSImpl::rename] Unable to remove existing path=`%s`\n", normPathTo.c_str());
 			return false;
 		}
 		// try to rename again
 		res = f_rename(normPathFrom.c_str(), normPathTo.c_str());
 	}
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::rename] Unable to rename path=`%s`\r\n", normPathFrom.c_str());
+		ESPFAT_DEBUG("[VFATFSImpl::rename] Unable to rename path=`%s`\n", normPathFrom.c_str());
 		return false;
 	}
 	return true;
@@ -332,7 +332,7 @@ bool VFATFSImpl::info(FSInfo& info) {
 	DWORD nclst;
 	FRESULT res = f_getfree("/", &nclst, &fatfs);
 	if (FR_OK != res) {
-		DEBUGV("[VFATFSImpl::info] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::info] Error %d\n", res);
 		return false;
 	}
 	info.pageSize = VFATFS_PHYS_BLOCK;
@@ -347,13 +347,13 @@ bool VFATFSImpl::info(FSInfo& info) {
 bool VFATFSImpl::remove(const char* path) {
 	String normPath;
 	if (!normalizePath(path, normPath)) {
-		DEBUGV("[VFATFSImpl::remove] Invalid path\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::remove] Invalid path\n");
 		return false;
 	}
 
 	FRESULT res = f_unlink(normPath.c_str());
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::remove] Unable to remove path=`%s`\r\n", normPath.c_str());
+		ESPFAT_DEBUG("[VFATFSImpl::remove] Unable to remove path=`%s`\n", normPath.c_str());
 		return false;
 	}
 	return true;
@@ -362,19 +362,24 @@ bool VFATFSImpl::remove(const char* path) {
 bool VFATFSImpl::exists(const char* path) {
 	String normPath;
 	if (!normalizePath(path, normPath)) {
-		DEBUGV("[VFATFSImpl::remove] Invalid path\r\n");
+		ESPFAT_DEBUG("[VFATFSImpl::exists] Invalid path\n");
 		return false;
 	}
 
-	FRESULT res = f_stat(normPath.c_str(), NULL);
-	return res == FR_OK;
+	ESPFAT_DEBUGV("[VFATFSImpl::exists] Normalized path '%s'\n", normPath.c_str());
+	if (!normPath.equals("/")) {
+		FRESULT res = f_stat(normPath.c_str(), NULL);
+		ESPFAT_DEBUGV("[VFATFSImpl::exists] result %d\n", res);
+		return res == FR_OK;
+	}
+	return true;
 }
 
 bool VFATFSImpl::isDir(const char* path) {
 	FILINFO stats;
 	FRESULT res = f_stat(path, &stats);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::isDir] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::isDir] Error %d\n", res);
 		return false;
 	}
 	return (stats.fattrib & AM_DIR);
@@ -384,7 +389,7 @@ time_t VFATFSImpl::mtime(const char* path) {
 	FILINFO stats;
 	FRESULT res = f_stat(path, &stats);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::mtime] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::mtime] Error %d\n", res);
 		return 0;
 	}
 
@@ -416,13 +421,13 @@ bool VFATFSImpl::format() {
 		}
 	}
 
-	DEBUGV("[VFATFSImpl::format] In progress...\r\n");
+	ESPFAT_DEBUGV("[VFATFSImpl::format] In progress...\n");
 	FRESULT res = f_mkfs("/", FM_FAT|FM_SFD, 0, _fatfs.win, VFATFS_SECTOR_SIZE);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::format] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::format] Error %d\n", res);
 		return false;
 	}
-	DEBUGV("[VFATFSImpl::format] Done\r\n");
+	ESPFAT_DEBUGV("[VFATFSImpl::format] Done\n");
 
 	if (wasMounted) {
 		mount();
@@ -433,22 +438,22 @@ bool VFATFSImpl::format() {
 bool VFATFSImpl::mount() {
 	FRESULT res = f_mount(&_fatfs, "/", 1);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::mount] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::mount] Error %d\n", res);
 		return false;
 	}
 	_mounted = true;
-	DEBUGV("[VFATFSImpl::mount] Success\r\n");
+	ESPFAT_DEBUGV("[VFATFSImpl::mount] Success\n");
 	return true;
 }
 
 bool VFATFSImpl::unmount() {
 	FRESULT res = f_mount(NULL, "/", 0);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSImpl::unmount] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSImpl::unmount] Error %d\n", res);
 		return false;
 	}
 	_mounted = false;
-	DEBUGV("[VFATFSImpl::unmount] Success\r\n");
+	ESPFAT_DEBUGV("[VFATFSImpl::unmount] Success\n");
 	return true;
 }
 
@@ -458,7 +463,7 @@ size_t VFATFSFileImpl::write(const uint8_t *buf, size_t size) {
 	UINT sz_out;
 	FRESULT res = f_write(&_fd, buf, size, &sz_out);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSFileImpl::write] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSFileImpl::write] Error %d\n", res);
 		return -1;
 	}
 	return sz_out;
@@ -470,7 +475,7 @@ size_t VFATFSFileImpl::read(uint8_t* buf, size_t size) {
 	UINT sz_out;
 	FRESULT res = f_read(&_fd, buf, size, &sz_out);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSFileImpl::read] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSFileImpl::read] Error %d\n", res);
 		return -1;
 	}
 	return sz_out;
@@ -481,7 +486,7 @@ void VFATFSFileImpl::flush() {
 
 	FRESULT res = f_sync(&_fd);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSFileImpl::flush] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSFileImpl::flush] Error %d\n", res);
 	}
 }
 
@@ -502,13 +507,13 @@ bool VFATFSFileImpl::seek(uint32_t pos, SeekMode mode) {
 				pos = endpos - pos;
 			}
 			default:
-				DEBUGV("[VFATFSFileImpl::seek] Unsupported seek mode: %d\r\n", mode);
+				ESPFAT_DEBUG("[VFATFSFileImpl::seek] Unsupported seek mode: %d\n", mode);
 				return false;
 	}
 
 	FRESULT res = f_lseek(&_fd, pos);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSFileImpl::seek] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSFileImpl::seek] Error %d\n", res);
 		return false;
 	}
 	return true;
@@ -522,7 +527,7 @@ void VFATFSFileImpl::close() {
 	if (_fd.obj.fs) {
 		FRESULT res = f_close(&_fd);
 		if (res != FR_OK) {
-			DEBUGV("[VFATFSFileImpl::close] Error %d\r\n", res);
+			ESPFAT_DEBUG("[VFATFSFileImpl::close] Error %d\n", res);
 		}
 		_fd = {0};
 	}
@@ -543,12 +548,12 @@ DirImplPtr VFATFSDirImpl::openDir() {
 }
 
 FileImplPtr VFATFSDirImpl::openFile(const char *name, OpenMode openMode, AccessMode accessMode) {
-	String entrypath = _pathname + "/" + name;
+	String entrypath = pathAppend(_pathname, name);
 	return _fs.open(entrypath.c_str(), openMode, accessMode);
 }
 
 DirImplPtr VFATFSDirImpl::openDir(const char *name, bool create) {
-	String entrypath = _pathname + "/" + name;
+	String entrypath = pathAppend(_pathname, name);
 	return _fs.openDir(entrypath.c_str(), create);
 }
 
@@ -560,7 +565,7 @@ bool VFATFSDirImpl::remove() {
 }
 
 bool VFATFSDirImpl::remove(const char *name) {
-	String entrypath = _pathname + "/" + name;
+	String entrypath = pathAppend(_pathname, name);
 	return _fs.remove(entrypath.c_str());
 }
 
@@ -581,7 +586,7 @@ bool VFATFSDirImpl::isEntryDir() const {
 }
 
 bool VFATFSDirImpl::isDir(const char* path) const {
-	String entrypath = _pathname + "/" + path;
+	String entrypath = pathAppend(_pathname, path);
 	return _fs.isDir(entrypath.c_str());
 }
 
@@ -593,7 +598,7 @@ bool VFATFSDirImpl::next(bool reset) {
 	if (reset) f_readdir(&_fd, NULL);
 	FRESULT res = f_readdir(&_fd, &entryStats);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSDirImpl::next] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSDirImpl::next] Error %d\n", res);
 		return false;
 	}
 	return entryStats.fname[0];
@@ -602,6 +607,6 @@ bool VFATFSDirImpl::next(bool reset) {
 void VFATFSDirImpl::close() {
 	FRESULT res = f_closedir(&_fd);
 	if (res != FR_OK) {
-		DEBUGV("[VFATFSDirImpl::close] Error %d\r\n", res);
+		ESPFAT_DEBUG("[VFATFSDirImpl::close] Error %d\n", res);
 	}
 }

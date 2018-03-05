@@ -9,6 +9,8 @@
 #include <FS.h>
 #include <vfatfs_api.h>
 
+#include <Units.h>
+
 extern "C" {
   #include "lwip/sntp.h"
 }
@@ -55,9 +57,11 @@ void setup() {
 
   FSInfo info;
   VFATFS.info(info);
-  Serial.printf("FATFS: %d total, %d used (%.1f%%), block size %d\n",
-                info.totalBytes, info.usedBytes, info.usedBytes*100.0/info.totalBytes, info.blockSize);
-
+  Serial.printf("FATFS: %s total, %s used (%.1f%%), block size %"PRIu16"\n",
+    ToString(info.totalBytes, SizeUnit::BYTE, true).c_str(),
+    ToString(info.usedBytes, SizeUnit::BYTE, true).c_str(),
+    info.usedBytes*100.0/info.totalBytes,
+    (unsigned int)info.blockSize);
 }
 
 void loop() {

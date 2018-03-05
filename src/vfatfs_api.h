@@ -28,12 +28,12 @@
 #include "FSImpl.h"
 #include "Misc.h"
 
-#ifndef ESPFAT_LOG
-	#define ESPFAT_LOG(...) ESPZW_LOG(__VA_ARGS__)
-#endif
-
 #ifndef ESPFAT_DEBUG_LEVEL
 	#define ESPFAT_DEBUG_LEVEL ESPZW_DEBUG_LEVEL
+#endif
+
+#ifndef ESPFAT_LOG
+	#define ESPFAT_LOG(...) ESPZW_LOG(__VA_ARGS__)
 #endif
 
 #if ESPFAT_DEBUG_LEVEL < 1

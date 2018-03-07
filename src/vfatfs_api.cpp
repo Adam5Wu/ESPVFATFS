@@ -564,12 +564,14 @@ bool VFATFSFileImpl::remove() {
 	return _fs.remove(_pathname.c_str());
 }
 
-bool VFATFSFileImpl::rename(const char *pathTo) {
+bool VFATFSFileImpl::rename(const char *nameTo) {
 	MUSTNOTCLOSE();
 	close();
 
-	if (_fs.rename(_pathname.c_str(), pathTo)) {
-		_pathname = pathTo;
+	String targetPath = pathGetParent(_pathname);
+	pathAppend(targetPath, nameTo);
+	if (_fs.rename(_pathname.c_str(), targetPath.c_str())) {
+		_pathname = std::move(targetPath);
 		return true;
 	}
 	return false;
@@ -588,43 +590,43 @@ void VFATFSFileImpl::close() {
 // Dir
 
 FileImplPtr VFATFSDirImpl::openFile(const char *name, OpenMode openMode, AccessMode accessMode) {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.openFile(entrypath.c_str(), openMode, accessMode);
 }
 
 DirImplPtr VFATFSDirImpl::openDir(const char *name, bool create) {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.openDir(entrypath.c_str(), create);
 }
 
 bool VFATFSDirImpl::exists(const char *name) const {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.exists(entrypath.c_str());
 }
 
 bool VFATFSDirImpl::isDir(const char* name) const {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.isDir(entrypath.c_str());
 }
 
 size_t VFATFSDirImpl::size(const char* name) const {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.size(entrypath.c_str());
 }
 
 time_t VFATFSDirImpl::mtime(const char* name) const {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.mtime(entrypath.c_str());
 }
 
 bool VFATFSDirImpl::remove(const char *name) {
-	String entrypath = pathAppend(_pathname, name);
+	String entrypath = pathJoin(_pathname, name);
 	return _fs.remove(entrypath.c_str());
 }
 
 bool VFATFSDirImpl::rename(const char* nameFrom, const char* nameTo) {
-	String entrypathFrom = pathAppend(_pathname, nameFrom);
-	String entrypathTo = pathAppend(_pathname, nameTo);
+	String entrypathFrom = pathJoin(_pathname, nameFrom);
+	String entrypathTo = pathJoin(_pathname, nameTo);
 	return _fs.rename(entrypathFrom.c_str(),entrypathTo.c_str());
 }
 

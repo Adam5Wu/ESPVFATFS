@@ -132,7 +132,7 @@ public:
 
 	time_t mtime() const override;
 	bool remove() override;
-	bool rename(const char *pathTo) override;
+	bool rename(const char *nameTo) override;
 
 	void close() override;
 

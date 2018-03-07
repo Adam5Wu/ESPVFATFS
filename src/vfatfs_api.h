@@ -75,18 +75,21 @@ class VFATFSImpl : public FSImpl {
 public:
 	VFATFSImpl() :_fatfs({0}), _mounted(false) {}
 
-	FileImplPtr open(const char* path, OpenMode openMode, AccessMode accessMode) override;
-	DirImplPtr openDir(const char* path, bool create) override;
-	bool rename(const char* pathFrom, const char* pathTo) override;
-	bool info(FSInfo& info) override;
-	bool remove(const char* path) override;
-	bool exists(const char* path) override;
-	bool isDir(const char* path) override;
-	time_t mtime(const char* path) override;
-
 	bool begin() override;
 	void end() override;
 	bool format() override;
+	bool info(FSInfo& info) const override;
+
+	bool exists(const char* path) const override;
+	bool isDir(const char* path) const override;
+	size_t size(const char* path) const override;
+	time_t mtime(const char* path) const override;
+
+	FileImplPtr openFile(const char* path, OpenMode openMode,
+		AccessMode accessMode) override;
+	DirImplPtr openDir(const char* path, bool create) override;
+	bool remove(const char* path) override;
+	bool rename(const char* pathFrom, const char* pathTo) override;
 
 protected:
 	friend class VFATFSFileImpl;
@@ -128,6 +131,9 @@ public:
 	}
 
 	time_t mtime() const override;
+	bool remove() override;
+	bool rename(const char *pathTo) override;
+
 	void close() override;
 
 protected:
@@ -149,12 +155,15 @@ class VFATFSDirImpl : public DirImpl {
 		close();
 	}
 
-	FileImplPtr openFile(OpenMode openMode, AccessMode accessMode) override;
-	DirImplPtr openDir() override;
-	FileImplPtr openFile(const char *name, OpenMode openMode, AccessMode accessMode) override;
+	FileImplPtr openFile(const char *name, OpenMode openMode,
+		AccessMode accessMode) override;
 	DirImplPtr openDir(const char *name, bool create) override;
-	bool remove() override;
+	bool exists(const char *name) const override;
+	bool isDir(const char* name) const override;
+	size_t size(const char* name) const override;
+	time_t mtime(const char* name) const override;
 	bool remove(const char *name) override;
+	bool rename(const char* nameFrom, const char* nameTo) override;
 
 	const char* entryName() const override {
 		return entryStats.fname[0]? entryStats.fname : NULL;
@@ -166,15 +175,19 @@ class VFATFSDirImpl : public DirImpl {
 
 	time_t entryMtime() const override;
 	bool isEntryDir() const override;
-	bool isDir(const char* path) const override;
+	bool next(bool reset) override;
+
+	FileImplPtr openEntryFile(OpenMode openMode,
+		AccessMode accessMode) override;
+	DirImplPtr openEntryDir() override;
+	bool removeEntry() override;
+	bool renameEntry(const char* nameTo) override;
+
+	time_t mtime() const override;
 
 	const char* name() const override {
 		return _pathname.c_str();
 	}
-
-	time_t mtime() const override;
-
-	bool next(bool reset) override;
 
 protected:
 	VFATFSImpl& _fs;

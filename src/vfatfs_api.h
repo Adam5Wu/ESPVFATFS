@@ -115,6 +115,7 @@ public:
 	size_t read(uint8_t* buf, size_t size) override;
 	void flush() override;
 	bool seek(uint32_t pos, SeekMode mode) override;
+	bool truncate() override;
 
 	size_t position() const override {
 		MUSTNOTCLOSE();

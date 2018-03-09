@@ -553,6 +553,17 @@ bool VFATFSFileImpl::seek(uint32_t pos, SeekMode mode) {
 	return true;
 }
 
+bool VFATFSFileImpl::truncate() {
+	MUSTNOTCLOSE();
+
+	FRESULT res = f_truncate(&_fd);
+	if (res != FR_OK) {
+		ESPFAT_DEBUGV("[VFATFSFileImpl::truncate] Error %"PRIi16"\n", res);
+		return false;
+	}
+	return true;
+}
+
 time_t VFATFSFileImpl::mtime() const {
 	return _fs.mtime(_pathname.c_str());
 }

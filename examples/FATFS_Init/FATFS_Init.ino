@@ -57,7 +57,7 @@ void setup() {
 
   FSInfo info;
   VFATFS.info(info);
-  Serial.printf("FATFS: %s total, %s used (%.1f%%), block size %"PRIu16"\n",
+  Serial.printf("FATFS: %s total, %s used (%.1f%%), block size %d\n",
     ToString(info.totalBytes, SizeUnit::BYTE, true).c_str(),
     ToString(info.usedBytes, SizeUnit::BYTE, true).c_str(),
     info.usedBytes*100.0/info.totalBytes,

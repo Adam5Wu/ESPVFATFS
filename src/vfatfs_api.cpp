@@ -35,9 +35,7 @@ void fattime2unixts(time_t &ts, uint16_t time, uint16_t date) {
 	tpart.tm_min = (time >> 5) & 0x3f;
 	tpart.tm_sec = (time & 0x1f) << 1;
 
-	ESPFAT_DEBUGVV("[VFATFS##fattime2unixts] "
-		"%"PRIi16"-%02"PRIi16"-%02"PRIi16" "
-		"%02"PRIi16":%02"PRIi16":%02"PRIi16"\n",
+	ESPFAT_DEBUGVV("[VFATFS##fattime2unixts] %d-%02d-%02d %02d:%02d:%02d\n",
 		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
 		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 	ts = mktime(&tpart);
@@ -54,9 +52,7 @@ void unixts2fattime(time_t ts, uint16_t &time, uint16_t &date) {
 	struct tm tpart;
 	gmtime_r(&ts, &tpart);
 
-	ESPFAT_DEBUGVV("[VFATFS##unixts2fattime] "
-		"%"PRIi16"-%02"PRIi16"-%02"PRIi16" "
-		"%02"PRIi16":%02"PRIi16":%02"PRIi16"\n",
+	ESPFAT_DEBUGVV("[VFATFS##unixts2fattime] %d-%02d-%02d %02d:%02d:%02d\n",
 		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
 		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 
@@ -240,7 +236,7 @@ DRESULT disk_ioctl (
 			return RES_OK;
 	}
 
-	ESPFAT_DEBUGV("[VFATFS##disk_ioctl] Unhandled %"PRIi16"\n", cmd);
+	ESPFAT_DEBUGV("[VFATFS##disk_ioctl] Unhandled %d\n", cmd);
 	return RES_PARERR;
 }
 
@@ -265,7 +261,7 @@ using namespace fs;
 bool VFATFSImpl::mount() {
 	FRESULT res = f_mount(&_fatfs, "/", 1);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::mount] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::mount] Error %d\n", res);
 		return false;
 	}
 	_mounted = true;
@@ -276,7 +272,7 @@ bool VFATFSImpl::mount() {
 bool VFATFSImpl::unmount() {
 	FRESULT res = f_mount(NULL, "/", 0);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::unmount] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::unmount] Error %d\n", res);
 		return false;
 	}
 	_mounted = false;
@@ -310,7 +306,7 @@ bool VFATFSImpl::format() {
 	ESPFAT_DEBUGVV("[VFATFSImpl::format] In progress...\n");
 	FRESULT res = f_mkfs("/", FM_FAT|FM_SFD, 0, _fatfs.win, VFATFS_SECTOR_SIZE);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::format] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::format] Error %d\n", res);
 		return false;
 	}
 	ESPFAT_DEBUGVV("[VFATFSImpl::format] Done\n");
@@ -330,7 +326,7 @@ bool VFATFSImpl::info(FSInfo& info) const {
 	DWORD nclst;
 	FRESULT res = f_getfree("/", &nclst, &fatfs);
 	if (FR_OK != res) {
-		ESPFAT_DEBUGV("[VFATFSImpl::info] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::info] Error %d\n", res);
 		return false;
 	}
 	info.pageSize = VFATFS_PHYS_BLOCK;
@@ -353,7 +349,7 @@ bool VFATFSImpl::exists(const char* path) const {
 		normPath.c_str());
 	if (!normPath.equals("/")) {
 		FRESULT res = f_stat(normPath.c_str(), NULL);
-		ESPFAT_DEBUGVV("[VFATFSImpl::exists] result %"PRIi16"\n", res);
+		ESPFAT_DEBUGVV("[VFATFSImpl::exists] result %d\n", res);
 		return res == FR_OK;
 	}
 	return true;
@@ -363,7 +359,7 @@ bool VFATFSImpl::isDir(const char* path) const {
 	FILINFO stats;
 	FRESULT res = f_stat(path, &stats);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::isDir] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::isDir] Error %d\n", res);
 		return false;
 	}
 	return (stats.fattrib & AM_DIR);
@@ -373,7 +369,7 @@ size_t VFATFSImpl::size(const char* path) const {
 	FILINFO stats;
 	FRESULT res = f_stat(path, &stats);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::size] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::size] Error %d\n", res);
 		return 0;
 	}
 
@@ -384,7 +380,7 @@ time_t VFATFSImpl::mtime(const char* path) const {
 	FILINFO stats;
 	FRESULT res = f_stat(path, &stats);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::mtime] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::mtime] Error %d\n", res);
 		return 0;
 	}
 
@@ -414,7 +410,7 @@ FileImplPtr VFATFSImpl::openFile(const char* path, OpenMode openMode,
 	FIL fd{0}; // Note: enable FS_TINY, or have >5K free stack space!
 	FRESULT res = f_open(&fd, normPath.c_str(), open_mode);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::openFile] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::openFile] Error %d\n", res);
 		return FileImplPtr();
 	}
 	return std::make_shared<VFATFSFileImpl>(*this, fd, normPath.c_str());
@@ -437,7 +433,7 @@ DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 		}
 	}
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSImpl::opendir] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSImpl::opendir] Error %d\n", res);
 		return DirImplPtr();
 	}
 	return std::make_shared<VFATFSDirImpl>(*this, fd, normPath.c_str());
@@ -497,7 +493,7 @@ size_t VFATFSFileImpl::write(const uint8_t *buf, size_t size) {
 	UINT sz_out;
 	FRESULT res = f_write(&_fd, buf, size, &sz_out);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSFileImpl::write] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSFileImpl::write] Error %d\n", res);
 		return -1;
 	}
 	return sz_out;
@@ -509,7 +505,7 @@ size_t VFATFSFileImpl::read(uint8_t* buf, size_t size) {
 	UINT sz_out;
 	FRESULT res = f_read(&_fd, buf, size, &sz_out);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSFileImpl::read] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSFileImpl::read] Error %d\n", res);
 		return -1;
 	}
 	return sz_out;
@@ -520,7 +516,7 @@ void VFATFSFileImpl::flush() {
 
 	FRESULT res = f_sync(&_fd);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSFileImpl::flush] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSFileImpl::flush] Error %d\n", res);
 	}
 }
 
@@ -541,13 +537,13 @@ bool VFATFSFileImpl::seek(uint32_t pos, SeekMode mode) {
 			pos = endpos - pos;
 		}
 		default:
-			ESPFAT_DEBUGV("[VFATFSFileImpl::seek] Unsupported seek mode: %"PRIi16"\n", mode);
+			ESPFAT_DEBUGV("[VFATFSFileImpl::seek] Unsupported seek mode: %d\n", mode);
 			return false;
 	}
 
 	FRESULT res = f_lseek(&_fd, pos);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSFileImpl::seek] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSFileImpl::seek] Error %d\n", res);
 		return false;
 	}
 	return true;
@@ -558,7 +554,7 @@ bool VFATFSFileImpl::truncate() {
 
 	FRESULT res = f_truncate(&_fd);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSFileImpl::truncate] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSFileImpl::truncate] Error %d\n", res);
 		return false;
 	}
 	return true;
@@ -592,7 +588,7 @@ void VFATFSFileImpl::close() {
 	if (_fd.obj.fs) {
 		FRESULT res = f_close(&_fd);
 		if (res != FR_OK) {
-			ESPFAT_DEBUGV("[VFATFSFileImpl::close] Error %"PRIi16"\n", res);
+			ESPFAT_DEBUGV("[VFATFSFileImpl::close] Error %d\n", res);
 		}
 		_fd = {0};
 	}
@@ -659,7 +655,7 @@ bool VFATFSDirImpl::next(bool reset) {
 	if (reset) f_readdir(&_fd, NULL);
 	FRESULT res = f_readdir(&_fd, &entryStats);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSDirImpl::next] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSDirImpl::next] Error %d\n", res);
 		return false;
 	}
 	return entryStats.fname[0];
@@ -692,6 +688,6 @@ time_t VFATFSDirImpl::mtime() const {
 void VFATFSDirImpl::close() {
 	FRESULT res = f_closedir(&_fd);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSDirImpl::close] Error %"PRIi16"\n", res);
+		ESPFAT_DEBUGV("[VFATFSDirImpl::close] Error %d\n", res);
 	}
 }

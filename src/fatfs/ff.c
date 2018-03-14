@@ -512,39 +512,41 @@ static WCHAR LfnBuf[FF_MAX_LFN + 1];		/* LFN working buffer */
 /* Code conversion tables         */
 /*--------------------------------*/
 
+#include <pgmspace.h>
+
 #if FF_CODE_PAGE == 0		/* Run-time code page configuration */
 #define CODEPAGE CodePage
 static WORD CodePage;	/* Current code page */
 static const BYTE *ExCvt, *DbcTbl;	/* Pointer to current SBCS up-case table and DBCS code range table below */
-static const BYTE Ct437[] = TBL_CT437;
-static const BYTE Ct720[] = TBL_CT720;
-static const BYTE Ct737[] = TBL_CT737;
-static const BYTE Ct771[] = TBL_CT771;
-static const BYTE Ct775[] = TBL_CT775;
-static const BYTE Ct850[] = TBL_CT850;
-static const BYTE Ct852[] = TBL_CT852;
-static const BYTE Ct855[] = TBL_CT855;
-static const BYTE Ct857[] = TBL_CT857;
-static const BYTE Ct860[] = TBL_CT860;
-static const BYTE Ct861[] = TBL_CT861;
-static const BYTE Ct862[] = TBL_CT862;
-static const BYTE Ct863[] = TBL_CT863;
-static const BYTE Ct864[] = TBL_CT864;
-static const BYTE Ct865[] = TBL_CT865;
-static const BYTE Ct866[] = TBL_CT866;
-static const BYTE Ct869[] = TBL_CT869;
-static const BYTE Dc932[] = TBL_DC932;
-static const BYTE Dc936[] = TBL_DC936;
-static const BYTE Dc949[] = TBL_DC949;
-static const BYTE Dc950[] = TBL_DC950;
+static const BYTE Ct437[] PROGMEM = TBL_CT437;
+static const BYTE Ct720[] PROGMEM = TBL_CT720;
+static const BYTE Ct737[] PROGMEM = TBL_CT737;
+static const BYTE Ct771[] PROGMEM = TBL_CT771;
+static const BYTE Ct775[] PROGMEM = TBL_CT775;
+static const BYTE Ct850[] PROGMEM = TBL_CT850;
+static const BYTE Ct852[] PROGMEM = TBL_CT852;
+static const BYTE Ct855[] PROGMEM = TBL_CT855;
+static const BYTE Ct857[] PROGMEM = TBL_CT857;
+static const BYTE Ct860[] PROGMEM = TBL_CT860;
+static const BYTE Ct861[] PROGMEM = TBL_CT861;
+static const BYTE Ct862[] PROGMEM = TBL_CT862;
+static const BYTE Ct863[] PROGMEM = TBL_CT863;
+static const BYTE Ct864[] PROGMEM = TBL_CT864;
+static const BYTE Ct865[] PROGMEM = TBL_CT865;
+static const BYTE Ct866[] PROGMEM = TBL_CT866;
+static const BYTE Ct869[] PROGMEM = TBL_CT869;
+static const BYTE Dc932[] PROGMEM = TBL_DC932;
+static const BYTE Dc936[] PROGMEM = TBL_DC936;
+static const BYTE Dc949[] PROGMEM = TBL_DC949;
+static const BYTE Dc950[] PROGMEM = TBL_DC950;
 
 #elif FF_CODE_PAGE < 900	/* Static code page configuration (SBCS) */
 #define CODEPAGE FF_CODE_PAGE
-static const BYTE ExCvt[] = MKCVTBL(TBL_CT, FF_CODE_PAGE);
+static const BYTE ExCvt[] PROGMEM = MKCVTBL(TBL_CT, FF_CODE_PAGE);
 
 #else					/* Static code page configuration (DBCS) */
 #define CODEPAGE FF_CODE_PAGE
-static const BYTE DbcTbl[] = MKCVTBL(TBL_DC, FF_CODE_PAGE);
+static const BYTE DbcTbl[] PROGMEM = MKCVTBL(TBL_DC, FF_CODE_PAGE);
 
 #endif
 
@@ -697,14 +699,16 @@ static
 int dbc_1st (BYTE c)
 {
 #if FF_CODE_PAGE == 0		/* Variable code page */
-	if (DbcTbl && c >= DbcTbl[0]) {
-		if (c <= DbcTbl[1]) return 1;					/* 1st byte range 1 */
-		if (c >= DbcTbl[2] && c <= DbcTbl[3]) return 1;	/* 1st byte range 2 */
+	if (DbcTbl && c >= pgm_read_byte_inlined(DbcTbl+0)) {
+		if (c <= pgm_read_byte_inlined(DbcTbl+1)) return 1;	/* 1st byte range 1 */
+		if (c >= pgm_read_byte_inlined(DbcTbl+2) &&
+			c <= pgm_read_byte_inlined(DbcTbl+3)) return 1;	/* 1st byte range 2 */
 	}
 #elif FF_CODE_PAGE >= 900	/* DBCS fixed code page */
-	if (c >= DbcTbl[0]) {
-		if (c <= DbcTbl[1]) return 1;
-		if (c >= DbcTbl[2] && c <= DbcTbl[3]) return 1;
+	if (c >= pgm_read_byte_inlined(DbcTbl+0)) {
+		if (c <= pgm_read_byte_inlined(DbcTbl+1)) return 1;
+		if (c >= pgm_read_byte_inlined(DbcTbl+2) &&
+			c <= pgm_read_byte_inlined(DbcTbl+3)) return 1;
 	}
 #else						/* SBCS fixed code page */
 	if (c != 0) return 0;	/* Always false */
@@ -718,16 +722,20 @@ static
 int dbc_2nd (BYTE c)
 {
 #if FF_CODE_PAGE == 0		/* Variable code page */
-	if (DbcTbl && c >= DbcTbl[4]) {
-		if (c <= DbcTbl[5]) return 1;					/* 2nd byte range 1 */
-		if (c >= DbcTbl[6] && c <= DbcTbl[7]) return 1;	/* 2nd byte range 2 */
-		if (c >= DbcTbl[8] && c <= DbcTbl[9]) return 1;	/* 2nd byte range 3 */
+	if (DbcTbl && c >= pgm_read_byte_inlined(DbcTbl+4)) {
+		if (c <= pgm_read_byte_inlined(DbcTbl+5)) return 1;	/* 2nd byte range 1 */
+		if (c >= pgm_read_byte_inlined(DbcTbl+6) &&
+			c <= pgm_read_byte_inlined(DbcTbl+7)) return 1;	/* 2nd byte range 2 */
+		if (c >= pgm_read_byte_inlined(DbcTbl+8) &&
+			c <= pgm_read_byte_inlined(DbcTbl+9)) return 1;	/* 2nd byte range 3 */
 	}
 #elif FF_CODE_PAGE >= 900	/* DBCS fixed code page */
-	if (c >= DbcTbl[4]) {
-		if (c <= DbcTbl[5]) return 1;
-		if (c >= DbcTbl[6] && c <= DbcTbl[7]) return 1;
-		if (c >= DbcTbl[8] && c <= DbcTbl[9]) return 1;
+	if (c >= pgm_read_byte_inlined(DbcTbl+4)) {
+		if (c <= pgm_read_byte_inlined(DbcTbl+5)) return 1;
+		if (c >= pgm_read_byte_inlined(DbcTbl+6) &&
+			c <= pgm_read_byte_inlined(DbcTbl+7)) return 1;
+		if (c >= pgm_read_byte_inlined(DbcTbl+8) &&
+			c <= pgm_read_byte_inlined(DbcTbl+9)) return 1;
 	}
 #else						/* SBCS fixed code page */
 	if (c != 0) return 0;	/* Always false */
@@ -2236,7 +2244,7 @@ void init_alloc_info (
 /* exFAT: Load the object's directory entry block */
 /*------------------------------------------------*/
 static
-FRESULT load_obj_xdir (	
+FRESULT load_obj_xdir (
 	DIR* dp,			/* Blank directory object to be used to access containing direcotry */
 	const FFOBJID* obj	/* Object with its containing directory information */
 )
@@ -2781,9 +2789,9 @@ DWORD get_achar (		/* Get a character and advances ptr */
 	chr = (BYTE)*(*ptr)++;				/* Get a byte */
 	if (IsLower(chr)) chr -= 0x20;		/* To upper ASCII char */
 #if FF_CODE_PAGE == 0
-	if (ExCvt && chr >= 0x80) chr = ExCvt[chr - 0x80];	/* To upper SBCS extended char */
+	if (ExCvt && chr >= 0x80) chr = pgm_read_byte_inlined(ExCvt+(chr - 0x80));	/* To upper SBCS extended char */
 #elif FF_CODE_PAGE < 900
-	if (chr >= 0x80) chr = ExCvt[chr - 0x80];	/* To upper SBCS extended char */
+	if (chr >= 0x80) chr = pgm_read_byte_inlined(ExCvt+(chr - 0x80));	/* To upper SBCS extended char */
 #endif
 #if FF_CODE_PAGE == 0 || FF_CODE_PAGE >= 900
 	if (dbc_1st((BYTE)chr)) {	/* Get DBC 2nd byte if needed */
@@ -2924,13 +2932,13 @@ FRESULT create_name (	/* FR_OK: successful, FR_INVALID_NAME: could not create */
 #if FF_CODE_PAGE == 0
 			if (ExCvt) {	/* At SBCS */
 				wc = ff_uni2oem(wc, CODEPAGE);			/* Unicode ==> ANSI/OEM code */
-				if (wc & 0x80) wc = ExCvt[wc & 0x7F];	/* Convert extended character to upper (SBCS) */
+				if (wc & 0x80) wc = pgm_read_byte_inlined(ExCvt+(wc & 0x7F));	/* Convert extended character to upper (SBCS) */
 			} else {		/* At DBCS */
 				wc = ff_uni2oem(ff_wtoupper(wc), CODEPAGE);	/* Unicode ==> Upper convert ==> ANSI/OEM code */
 			}
 #elif FF_CODE_PAGE < 900	/* SBCS cfg */
 			wc = ff_uni2oem(wc, CODEPAGE);			/* Unicode ==> ANSI/OEM code */
-			if (wc & 0x80) wc = ExCvt[wc & 0x7F];	/* Convert extended character to upper (SBCS) */
+			if (wc & 0x80) wc = pgm_read_byte_inlined(ExCvt+(wc & 0x7F));	/* Convert extended character to upper (SBCS) */
 #else						/* DBCS cfg */
 			wc = ff_uni2oem(ff_wtoupper(wc), CODEPAGE);	/* Unicode ==> Upper convert ==> ANSI/OEM code */
 #endif
@@ -3007,11 +3015,11 @@ FRESULT create_name (	/* FR_OK: successful, FR_INVALID_NAME: could not create */
 		}
 #if FF_CODE_PAGE == 0
 		if (ExCvt && c >= 0x80) {		/* Is SBC extended character? */
-			c = ExCvt[c & 0x7F];		/* To upper SBC extended character */
+			c = pgm_read_byte_inlined(ExCvt+(c & 0x7F));		/* To upper SBC extended character */
 		}
 #elif FF_CODE_PAGE < 900
 		if (c >= 0x80) {				/* Is SBC extended character? */
-			c = ExCvt[c & 0x7F];		/* To upper SBC extended character */
+			c = pgm_read_byte_inlined(ExCvt+(c & 0x7F));		/* To upper SBC extended character */
 		}
 #endif
 		if (dbc_1st(c)) {				/* Check if it is a DBC 1st byte */
@@ -5268,9 +5276,9 @@ FRESULT f_setlabel (
 			if (dbc_1st((BYTE)wc)) wc = dbc_2nd((BYTE)*label) ? wc << 8 | (BYTE)*label++ : 0;
 			if (IsLower(wc)) wc -= 0x20;		/* To upper ASCII characters */
 #if FF_CODE_PAGE == 0
-			if (ExCvt && wc >= 0x80) wc = ExCvt[wc - 0x80];	/* To upper extended characters (SBCS cfg) */
+			if (ExCvt && wc >= 0x80) wc = pgm_read_byte_inlined(ExCvt+(wc - 0x80));	/* To upper extended characters (SBCS cfg) */
 #elif FF_CODE_PAGE < 900
-			if (wc >= 0x80) wc = ExCvt[wc - 0x80];	/* To upper extended characters (SBCS cfg) */
+			if (wc >= 0x80) wc = pgm_read_byte_inlined(ExCvt+(wc - 0x80));	/* To upper extended characters (SBCS cfg) */
 #endif
 #endif
 			if (wc == 0 || chk_chr(badchr + 0, (int)wc) || di >= (UINT)((wc >= 0x100) ? 10 : 11)) {	/* Reject invalid characters for volume label */
@@ -5959,6 +5967,12 @@ FRESULT f_mkfs (
 
 
 #if FF_MULTI_PARTITION
+
+#define MBR_HEADS_MIN 	16
+#define MBR_HEADS_MAX 	255
+#define MBR_SECTPERHEAD 63
+#define MBR_CYLN_MAX	1024
+
 /*-----------------------------------------------------------------------*/
 /* Create Partition Table on the Physical Drive                          */
 /*-----------------------------------------------------------------------*/
@@ -5969,12 +5983,9 @@ FRESULT f_fdisk (
 	void* work			/* Pointer to the working buffer (null: use heap memory) */
 )
 {
-	UINT i, n, sz_cyl, tot_cyl, b_cyl, e_cyl, p_cyl;
-	BYTE s_hd, e_hd, *p, *buf = (BYTE*)work;
+	BYTE *buf = (BYTE*)work;
 	DSTATUS stat;
-	DWORD sz_disk, sz_part, s_part;
-	FRESULT res;
-
+	DWORD sz_disk;
 
 	stat = disk_initialize(pdrv);
 	if (stat & STA_NOINIT) return FR_NOT_READY;
@@ -5987,11 +5998,16 @@ FRESULT f_fdisk (
 #endif
 	if (!buf) return FR_NOT_ENOUGH_CORE;
 
+#ifndef FF_EMBEDDED_FLASH
+	UINT i, n, sz_cyl, tot_cyl, b_cyl, e_cyl, p_cyl;
+	BYTE s_hd, e_hd, *p;
+	DWORD sz_part, s_part;
+
 	/* Determine the CHS without any consideration of the drive geometry */
-	for (n = 16; n < 256 && sz_disk / n / 63 > 1024; n *= 2) ;
-	if (n == 256) n--;
+	for (n = MBR_HEADS_MIN; n < MBR_HEADS_MAX && sz_disk / n / MBR_SECTPERHEAD > MBR_CYLN_MAX; n *= 2) ;
+	if (n > MBR_HEADS_MAX) n = MBR_HEADS_MAX;
 	e_hd = n - 1;
-	sz_cyl = 63 * n;
+	sz_cyl = MBR_SECTPERHEAD * n;
 	tot_cyl = sz_disk / sz_cyl;
 
 	/* Create partition table */
@@ -6004,7 +6020,7 @@ FRESULT f_fdisk (
 		sz_part = (DWORD)sz_cyl * p_cyl;
 		if (i == 0) {	/* Exclude first track of cylinder 0 */
 			s_hd = 1;
-			s_part += 63; sz_part -= 63;
+			s_part += MBR_SECTPERHEAD; sz_part -= MBR_SECTPERHEAD;
 		} else {
 			s_hd = 0;
 		}
@@ -6012,23 +6028,68 @@ FRESULT f_fdisk (
 		if (e_cyl >= tot_cyl) LEAVE_MKFS(FR_INVALID_PARAMETER);
 
 		/* Set partition table */
-		p[1] = s_hd;						/* Start head */
-		p[2] = (BYTE)(((b_cyl >> 2) & 0xC0) | 1);	/* Start sector */
-		p[3] = (BYTE)b_cyl;					/* Start cylinder */
-		p[4] = 0x07;						/* System type (temporary setting) */
-		p[5] = e_hd;						/* End head */
-		p[6] = (BYTE)(((e_cyl >> 2) & 0xC0) | 63);	/* End sector */
-		p[7] = (BYTE)e_cyl;					/* End cylinder */
-		st_dword(p + 8, s_part);			/* Start sector in LBA */
-		st_dword(p + 12, sz_part);			/* Number of sectors */
+		p[PTE_StHead] = s_hd;						/* Start head */
+		p[PTE_StSec] = (BYTE)(((b_cyl >> 2) & 0xC0) | 1);	/* Start sector */
+		p[PTE_StCyl] = (BYTE)b_cyl;					/* Start cylinder */
+		p[PTE_System] = 0x07;						/* System type (temporary setting) */
+		p[PTE_EdHead] = e_hd;						/* End head */
+		p[PTE_EdSec] = (BYTE)(((e_cyl >> 2) & 0xC0) | MBR_SECTPERHEAD);	/* End sector */
+		p[PTE_EdCyl] = (BYTE)e_cyl;					/* End cylinder */
+		st_dword(p + PTE_StLba, s_part);			/* Start sector in LBA */
+		st_dword(p + PTE_SizLba, sz_part);			/* Number of sectors */
 
 		/* Next partition */
 		b_cyl += p_cyl;
 	}
+#else
+	UINT i, n, sz_cyl, tot_cyl;
+	BYTE *p;
+	DWORD sz_part, s_part;
+
+	// Embedded flash does not subject to legacy compatibility constraints
+	for (n = 1; n < 256 && sz_disk / n / MBR_SECTPERHEAD > MBR_CYLN_MAX; n *= 2) ;
+	sz_cyl = MBR_SECTPERHEAD * n;
+	tot_cyl = sz_disk / sz_cyl;
+
+	/* Create partition table */
+	mem_set(buf, 0, FF_MAX_SS);
+	p = buf + MBR_Table; s_part = 1;
+	for (i = 0; i < 4; i++, p += SZ_PTE) {
+		sz_part = (szt[i] <= 100U) ? (sz_disk-1) * szt[i] / 100 : szt[i];	/* Number of cylinders */
+		if (sz_part == 0) continue;
+		if (s_part + sz_part > sz_disk) LEAVE_MKFS(FR_INVALID_PARAMETER);
+
+		/* Set partition table */
+		st_dword(p + PTE_StLba, s_part);			/* Start sector in LBA */
+		st_dword(p + PTE_SizLba, sz_part);			/* Number of sectors */
+		//ets_printf("%d@ %d (%d)\n",i, s_part, sz_part);
+
+		UINT pb_cyl = s_part % sz_cyl;
+		UINT b_cyl = s_part / sz_cyl;
+		if (b_cyl > MBR_CYLN_MAX-1) b_cyl = MBR_CYLN_MAX-1;
+		s_part += sz_part;
+		UINT pe_cyl = (s_part-1) % sz_cyl;
+		UINT e_cyl = (s_part-1) / sz_cyl;
+		if (e_cyl > MBR_CYLN_MAX-1) e_cyl = MBR_CYLN_MAX-1;
+
+		p[PTE_StHead] = pb_cyl/MBR_SECTPERHEAD;					/* Start head */
+		p[PTE_StSec] = (BYTE)(((b_cyl >> 2) & 0xC0) | (pb_cyl%MBR_SECTPERHEAD)+1);	/* Start sector */
+		p[PTE_StCyl] = (BYTE)b_cyl;					/* Start cylinder */
+		p[PTE_System] = 0x07;						/* System type (temporary setting) */
+		p[PTE_EdHead] = pe_cyl/MBR_SECTPERHEAD;					/* End head */
+		p[PTE_EdSec] = (BYTE)(((e_cyl >> 2) & 0xC0) | (pe_cyl%MBR_SECTPERHEAD)+1);	/* End sector */
+		p[PTE_EdCyl] = (BYTE)e_cyl;					/* End cylinder */
+		//ets_printf("%d: %d %d %d -> %d %d %d\n",
+		//	i, p[PTE_StHead], p[PTE_StSec], p[PTE_StCyl],
+		//	p[PTE_EdHead], p[PTE_EdSec], p[PTE_EdCyl]);
+	}
+#endif
 	st_word(p, 0xAA55);		/* MBR signature (always at offset 510) */
 
 	/* Write it to the MBR */
-	res = (disk_write(pdrv, buf, 0, 1) == RES_OK && disk_ioctl(pdrv, CTRL_SYNC, 0) == RES_OK) ? FR_OK : FR_DISK_ERR;
+	FRESULT res;
+	res = (disk_write(pdrv, buf, 0, 1) == RES_OK &&
+		disk_ioctl(pdrv, CTRL_SYNC, 0) == RES_OK) ? FR_OK : FR_DISK_ERR;
 	LEAVE_MKFS(res);
 }
 
@@ -6533,8 +6594,10 @@ FRESULT f_setcp (
 	WORD cp		/* Value to be set as active code page */
 )
 {
-	static const WORD       validcp[] = {  437,   720,   737,   771,   775,   850,   852,   857,   860,   861,   862,   863,   864,   865,   866,   869,   932,   936,   949,   950, 0};
-	static const BYTE *const tables[] = {Ct437, Ct720, Ct737, Ct771, Ct775, Ct850, Ct852, Ct857, Ct860, Ct861, Ct862, Ct863, Ct864, Ct865, Ct866, Ct869, Dc932, Dc936, Dc949, Dc950, 0};
+	static const WORD       validcp[] =
+		{  437,   720,   737,   771,   775,   850,   852,   857,   860,   861,   862,   863,   864,   865,   866,   869,   932,   936,   949,   950, 0};
+	static const BYTE *const tables[] PROGMEM =
+		{Ct437, Ct720, Ct737, Ct771, Ct775, Ct850, Ct852, Ct857, Ct860, Ct861, Ct862, Ct863, Ct864, Ct865, Ct866, Ct869, Dc932, Dc936, Dc949, Dc950, 0};
 	UINT i;
 
 
@@ -6544,9 +6607,9 @@ FRESULT f_setcp (
 	CodePage = cp;
 	if (cp >= 900) {	/* DBCS */
 		ExCvt = 0;
-		DbcTbl = tables[i];
+		DbcTbl = pgm_read_ptr(tables+i);
 	} else {			/* SBCS */
-		ExCvt = tables[i];
+		ExCvt = pgm_read_ptr(tables+i);
 		DbcTbl = 0;
 	}
 	return FR_OK;

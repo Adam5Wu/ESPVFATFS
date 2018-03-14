@@ -62,23 +62,39 @@
 
 #include "fatfs/ff.h"
 
-#define VFATFS_PHYS_BLOCK		 	4096
+#define VFATFS_PHYS_BLOCK		4096
 #define VFATFS_SECT_PER_PHYS	1			// HAL layer does not handle partial erase
 #define VFATFS_SECTOR_SIZE		(VFATFS_PHYS_BLOCK/VFATFS_SECT_PER_PHYS)
 
 using namespace fs;
+
+class VFATFSImpl;
+
+class VFATFSPartitions {
+friend class VFATFSImpl;
+protected:
+	static DWORD _size[4];
+	static uint8_t _opencnt;
+	static bool create();
+public:
+	static bool config(uint8_t A, uint8_t B = 0, uint8_t C = 0, uint8_t D = 0);
+};
 
 class VFATFSFileImpl;
 class VFATFSDirImpl;
 
 class VFATFSImpl : public FSImpl {
 public:
-	VFATFSImpl() :_fatfs({0}), _mounted(false) {}
+	VFATFSImpl(uint8_t partno = 0)
+		: _fatfs({0}), _mounted(false), _partno(partno) {}
 
 	bool begin() override;
 	void end() override;
 	bool format() override;
 	bool info(FSInfo& info) const override;
+
+	bool getLabel(char *label) const;
+	bool setLabel(const char *label);
 
 	bool exists(const char* path) const override;
 	bool isDir(const char* path) const override;
@@ -100,12 +116,13 @@ protected:
 
 	FATFS _fatfs;
 	bool _mounted;
+	uint8_t _partno;
 };
 
 class VFATFSFileImpl : public FileImpl {
 public:
-	VFATFSFileImpl(VFATFSImpl& fs, FIL fd, const char* pathname)
-	: _fs(fs), _fd(fd), _pathname(pathname) {}
+	VFATFSFileImpl(VFATFSImpl& fs, FIL fd, String && pathname)
+	: _fs(fs), _fd(fd), _pathname(std::move(pathname)) {}
 
 	~VFATFSFileImpl() override {
 		close();
@@ -128,7 +145,7 @@ public:
 	}
 
 	const char* name() const override {
-		return _pathname.c_str();
+		return _pathname.c_str()+2;
 	}
 
 	time_t mtime() const override;
@@ -149,8 +166,8 @@ protected:
 
 class VFATFSDirImpl : public DirImpl {
 	public:
-	VFATFSDirImpl(VFATFSImpl& fs, DIR fd, const char* pathname)
-	: _fs(fs), _fd(fd), _pathname(pathname), entryStats({0}) {}
+	VFATFSDirImpl(VFATFSImpl& fs, DIR fd, String && pathname)
+	: _fs(fs), _fd(fd), _pathname(std::move(pathname)), entryStats({0}) {}
 
 	~VFATFSDirImpl() override {
 		close();
@@ -187,7 +204,7 @@ class VFATFSDirImpl : public DirImpl {
 	time_t mtime() const override;
 
 	const char* name() const override {
-		return _pathname.c_str();
+		return _pathname.c_str()+2;
 	}
 
 protected:

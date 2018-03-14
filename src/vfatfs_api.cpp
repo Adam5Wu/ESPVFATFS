@@ -21,7 +21,7 @@
 */
 #include "vfatfs_api.h"
 
-#define VFATFS_DIR_MAXNEST 16
+#define VFATFS_DIR_MAXNEST 8
 
 #include <time.h>
 
@@ -60,8 +60,8 @@ void unixts2fattime(time_t ts, uint16_t &time, uint16_t &date) {
 	date = (tpart.tm_year - 80) << 9 | (tpart.tm_mon + 1) << 5 | tpart.tm_mday;
 }
 
-bool normalizePath(const char* in, String& out) {
-	ESPFAT_DEBUGVV("[VFATFS##normalizePath] Input '%s'\n",in);
+bool normalizePath(const char* in, uint8_t partno, String& out) {
+	ESPFAT_DEBUGVV("[VFATFS##normalizePath] Input '%s'\n", in);
 
 	// All path must start from root
 	if (*in != '/') {
@@ -100,7 +100,7 @@ bool normalizePath(const char* in, String& out) {
 		ESPFAT_DEBUGV("[VFATFS##normalizePath] Token overflow\n");
 		return false;
 	}
-	out.clear();
+	out = String(partno)+':';
 	uint8_t i = 0;
 	do {
 		out.concat('/');
@@ -112,14 +112,13 @@ bool normalizePath(const char* in, String& out) {
 	return true;
 }
 
-#include "spiffs/spiffs.h"
 #include "fatfs/diskio.h"
 
+#ifdef ESP8266
+
+#include <spi_flash.h>
+
 // these symbols should be defined in the linker script for each flash layout
-#ifdef ARDUINO
-
-#include <Arduino.h>
-
 extern "C" uint32_t _SPIFFS_start;
 extern "C" uint32_t _SPIFFS_end;
 
@@ -127,10 +126,6 @@ extern "C" uint32_t _SPIFFS_end;
 	((uint32_t) (&_SPIFFS_start) - 0x40200000)
 #define VFATFS_PHYS_SIZE	\
 	((uint32_t) (&_SPIFFS_end) - (uint32_t) (&_SPIFFS_start))
-
-extern int32_t spiffs_hal_write(uint32_t addr, uint32_t size, uint8_t *src);
-extern int32_t spiffs_hal_erase(uint32_t addr, uint32_t size);
-extern int32_t spiffs_hal_read(uint32_t addr, uint32_t size, uint8_t *dst);
 
 /*-----------------------------------------------------------------------*/
 /* Initialize a Drive																										*/
@@ -142,7 +137,6 @@ DSTATUS disk_initialize (
 	if (pdrv != 0)
 		return STA_NODISK;
 	return 0;
-	// return STA_PROTECT; // Read-Only Disk
 }
 
 /*-----------------------------------------------------------------------*/
@@ -155,7 +149,6 @@ DSTATUS disk_status (
 	if (pdrv != 0)
 		return STA_NODISK;
 	return 0;
-	// return STA_PROTECT; // Read-Only Disk
 }
 
 /*-----------------------------------------------------------------------*/
@@ -175,8 +168,8 @@ DRESULT disk_read (
 	uint32_t size = count * VFATFS_SECTOR_SIZE;
 
 	ESPFAT_DEBUGVV("[VFATF##disk_read] R 0x%lX 0x%X\n", addr, size);
-	int32_t ret = spiffs_hal_read(addr, size, buff);
-	return ret == SPIFFS_OK? RES_OK : RES_ERROR;
+	int32_t ret = spi_flash_read(addr, (uint32*)buff, size);
+	return ret == SPI_FLASH_RESULT_OK? RES_OK : RES_ERROR;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -184,10 +177,10 @@ DRESULT disk_read (
 /*-----------------------------------------------------------------------*/
 
 DRESULT disk_write (
-	BYTE pdrv,				/* Physical drive nmuber (0..) */
-	const BYTE *buff, /* Data to be written */
-	DWORD sector,			/* Sector address (LBA) */
-	UINT count				/* Number of sectors to write (1..128) */
+	BYTE pdrv,			/* Physical drive nmuber (0..) */
+	const BYTE *buff, 	/* Data to be written */
+	DWORD sector,		/* Sector address (LBA) */
+	UINT count			/* Number of sectors to write (1..128) */
 ) {
 	if (pdrv != 0)
 		return RES_PARERR;
@@ -196,14 +189,16 @@ DRESULT disk_write (
 	uint32_t size = count * VFATFS_SECTOR_SIZE;
 
 	ESPFAT_DEBUGVV("[VFATFS##disk_write] E 0x%lX 0x%X\n", addr, size);
-	int32_t ret = spiffs_hal_erase(addr, size);
-	if (ret != SPIFFS_OK)
-		return RES_ERROR;
-	ESPFAT_DEBUGVV("[VFATFS##disk_write] W 0x%lX 0x%X\n", addr, size);
-	ret = spiffs_hal_write(addr, size, const_cast<uint8_t*>(buff));
-	return ret == SPIFFS_OK? RES_OK : RES_ERROR;
-}
+	uint32_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE + sector;
+	while (count--) {
+		int32_t ret = spi_flash_erase_sector(erase_base+count);
+		if (ret != SPI_FLASH_RESULT_OK) return RES_ERROR;
+	}
 
+	ESPFAT_DEBUGVV("[VFATFS##disk_write] W 0x%lX 0x%X\n", addr, size);
+	int32_t ret = spi_flash_write(addr, (uint32*)buff, size);
+	return ret == SPI_FLASH_RESULT_OK? RES_OK : RES_ERROR;
+}
 
 /*-----------------------------------------------------------------------*/
 /* Miscellaneous Functions																							*/
@@ -211,7 +206,7 @@ DRESULT disk_write (
 
 DRESULT disk_ioctl (
 	BYTE pdrv,				/* Physical drive nmuber (0..) */
-	BYTE cmd,					/* Control code */
+	BYTE cmd,				/* Control code */
 	void *buff				/* Buffer to send/receive control data */
 ) {
 	if (pdrv != 0)
@@ -220,7 +215,7 @@ DRESULT disk_ioctl (
 	switch (cmd) {
 		case CTRL_SYNC:
 			// NOP
-		return RES_OK;
+			return RES_OK;
 
 		case GET_SECTOR_COUNT:
 			*((DWORD*)buff) = VFATFS_PHYS_SIZE / VFATFS_SECTOR_SIZE;
@@ -234,11 +229,33 @@ DRESULT disk_ioctl (
 			// erase block size in units of sector size
 			*((DWORD*)buff) = VFATFS_SECT_PER_PHYS;
 			return RES_OK;
+
+		case CTRL_TRIM:
+			DWORD *range = (DWORD*)buff;
+			uint32_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE + range[0];
+			uint16_t count = range[1]-range[0];
+			ESPFAT_DEBUGV("[VFATF::disk_ioctl] Trim #%d of %d sectors!\n",
+				erase_base, count);
+			while (count--) {
+				int32_t ret = spi_flash_erase_sector(erase_base+count);
+				if (ret != SPI_FLASH_RESULT_OK) return RES_ERROR;
+			}
+			return RES_OK;
 	}
 
 	ESPFAT_DEBUGV("[VFATFS##disk_ioctl] Unhandled %d\n", cmd);
 	return RES_PARERR;
 }
+
+/*-----------------------------------------------------------------------*/
+/* Heap Memory Functions																							*/
+/*-----------------------------------------------------------------------*/
+
+void* ff_memalloc (UINT msize)		/* Allocate memory block */
+{ return malloc(msize); }
+
+void ff_memfree (void* mblock)		/* Free memory block */
+{ return free(mblock); }
 
 #include <time.h>
 
@@ -254,37 +271,116 @@ FS VFATFS = FS(FSImplPtr(new VFATFSImpl()));
 
 #endif
 
+#include <utility>
+
 using namespace fs;
+
+// Partitions
+
+PARTITION VolToPart[FF_VOLUMES] = {
+	{0, 1},     /* "0:" ==> Physical drive 0, 1st partition */
+	{0, 2},     /* "1:" ==> Physical drive 0, 2nd partition */
+	{0, 3},     /* "2:" ==> Physical drive 0, 3rd partition */
+	{0, 4}      /* "3:" ==> Physical drive 0, 4th partition */
+};
+
+DWORD VFATFSPartitions::_size[4] = { 100, 0, 0, 0 };
+uint8_t VFATFSPartitions::_opencnt = 0;
+
+bool VFATFSPartitions::create() {
+	if (_opencnt) {
+		ESPFAT_DEBUGV("[VFATFSPartitions::create] There are %d mounted partitions!\n",
+			_opencnt);
+		return false;
+	}
+
+	ESPFAT_DEBUGVV("[VFATFSPartitions::create] In progress...\n");
+	FRESULT res = f_fdisk(0, _size, nullptr);
+	if (res != FR_OK) {
+		ESPFAT_DEBUGV("[VFATFSPartitions::create] Error %d\n", res);
+		return false;
+	}
+	ESPFAT_DEBUGVV("[VFATFSPartitions::create] Done\n");
+
+	return true;
+}
+
+bool VFATFSPartitions::config(uint8_t A, uint8_t B, uint8_t C, uint8_t D) {
+	if (_opencnt) {
+		ESPFAT_DEBUGV("[VFATFSPartitions::config] There are %d mounted partitions!\n",
+			_opencnt);
+		return false;
+	}
+
+	if (A + B + C + D > 100) {
+		ESPFAT_DEBUGV("[VFATFSPartitions::config] Invalid partition sizes "
+			"(%d%% + %d%% + %d%% + %d%% > 100%%)\n", A, B, C, D);
+		return false;
+	}
+	if (A + B + C + D < 100) {
+		ESPFAT_DEBUG("[VFATFSPartitions::config] Partitions do not fill disk "
+		"(%d%% + %d%% + %d%% + %d%% < 100%%)\n", A, B, C, D);
+	}
+
+	_size[0] = A; _size[1] = B; _size[2] = C; _size[3] = D;
+	return true;
+}
 
 // FS
 
+#define CSTR_NODRV(s) s.c_str()+2
+
 bool VFATFSImpl::mount() {
-	FRESULT res = f_mount(&_fatfs, "/", 1);
+	String DrvRoot(_partno);
+	DrvRoot.concat(":/",2);
+	ESPFAT_DEBUGVV("[VFATFSImpl::mount] Mount '%s' in progress...\n",
+		DrvRoot.c_str());
+	FRESULT res = f_mount(&_fatfs, DrvRoot.c_str(), 1);
 	if (res != FR_OK) {
 		ESPFAT_DEBUGV("[VFATFSImpl::mount] Error %d\n", res);
 		return false;
 	}
 	_mounted = true;
-	ESPFAT_DEBUGVV("[VFATFSImpl::mount] Success\n");
+	uint8_t mountCnt = ++VFATFSPartitions::_opencnt;
+	ESPFAT_DEBUGVV("[VFATFSImpl::mount] Mounted %s (#%d)\n",
+		DrvRoot.c_str(), mountCnt);
 	return true;
 }
 
 bool VFATFSImpl::unmount() {
-	FRESULT res = f_mount(NULL, "/", 0);
+	String DrvRoot(_partno);
+	DrvRoot.concat(":/",2);
+	ESPFAT_DEBUGVV("[VFATFSImpl::unmount] Unmount '%s' in progress...\n",
+		DrvRoot.c_str());
+	FRESULT res = f_mount(NULL, DrvRoot.c_str(), 0);
 	if (res != FR_OK) {
 		ESPFAT_DEBUGV("[VFATFSImpl::unmount] Error %d\n", res);
 		return false;
 	}
 	_mounted = false;
-	ESPFAT_DEBUGVV("[VFATFSImpl::unmount] Success\n");
+	uint8_t mountCnt = --VFATFSPartitions::_opencnt;
+	ESPFAT_DEBUGVV("[VFATFSImpl::unmount] Unmounted %s (#%d)\n",
+		DrvRoot.c_str(), mountCnt);
 	return true;
 }
 
 bool VFATFSImpl::begin() {
-	if (_mounted) {
-		return true;
+	if (_mounted) return true;
+
+	if (!VFATFSPartitions::_size[_partno]) {
+		ESPFAT_DEBUGV("[VFATFSImpl::begin] Partition #%d not enabled\n",
+			_partno);
+		return false;
 	}
-	return mount()? true : (format()? mount() : false);
+
+	if (mount()) return true;
+	if (format()) return mount();
+
+	if (VFATFSPartitions::create()) {
+		if (mount()) return true;
+		if (format()) return mount();
+	}
+	return false;
 }
 
 void VFATFSImpl::end() {
@@ -303,13 +399,16 @@ bool VFATFSImpl::format() {
 		}
 	}
 
-	ESPFAT_DEBUGVV("[VFATFSImpl::format] In progress...\n");
-	FRESULT res = f_mkfs("/", FM_FAT|FM_SFD, 0, _fatfs.win, VFATFS_SECTOR_SIZE);
+	String DrvRoot(_partno);
+	DrvRoot.concat(":/",2);
+	ESPFAT_DEBUGVV("[VFATFSImpl::format] Format '%s' in progress...\n",
+		DrvRoot.c_str());
+	FRESULT res = f_mkfs(DrvRoot.c_str(), FM_FAT, 0, _fatfs.win, FF_MAX_SS);
 	if (res != FR_OK) {
 		ESPFAT_DEBUGV("[VFATFSImpl::format] Error %d\n", res);
 		return false;
 	}
-	ESPFAT_DEBUGVV("[VFATFSImpl::format] Done\n");
+	ESPFAT_DEBUGVV("[VFATFSImpl::format] Done %s\n", DrvRoot.c_str());
 
 	if (wasMounted) {
 		mount();
@@ -324,7 +423,9 @@ bool VFATFSImpl::info(FSInfo& info) const {
 	uint32_t totalBytes, usedBytes;
 	FATFS *fatfs;
 	DWORD nclst;
-	FRESULT res = f_getfree("/", &nclst, &fatfs);
+	String DrvRoot(_partno);
+	DrvRoot.concat(":/",2);
+	FRESULT res = f_getfree(DrvRoot.c_str(), &nclst, &fatfs);
 	if (FR_OK != res) {
 		ESPFAT_DEBUGV("[VFATFSImpl::info] Error %d\n", res);
 		return false;
@@ -340,14 +441,14 @@ bool VFATFSImpl::info(FSInfo& info) const {
 
 bool VFATFSImpl::exists(const char* path) const {
 	String normPath;
-	if (!normalizePath(path, normPath)) {
+	if (!normalizePath(path, _partno, normPath)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::exists] Invalid path\n");
 		return false;
 	}
 
 	ESPFAT_DEBUGVV("[VFATFSImpl::exists] Normalized path '%s'\n",
 		normPath.c_str());
-	if (!normPath.equals("/")) {
+	if (normPath.length() > 3) {
 		FRESULT res = f_stat(normPath.c_str(), NULL);
 		ESPFAT_DEBUGVV("[VFATFSImpl::exists] result %d\n", res);
 		return res == FR_OK;
@@ -390,7 +491,7 @@ time_t VFATFSImpl::mtime(const char* path) const {
 FileImplPtr VFATFSImpl::openFile(const char* path, OpenMode openMode,
 	AccessMode accessMode) {
 	String normPath;
-	if (!normalizePath(path, normPath)) {
+	if (!normalizePath(path, _partno,  normPath)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::openFile] Invalid path\n");
 		return FileImplPtr();
 	}
@@ -413,12 +514,12 @@ FileImplPtr VFATFSImpl::openFile(const char* path, OpenMode openMode,
 		ESPFAT_DEBUGV("[VFATFSImpl::openFile] Error %d\n", res);
 		return FileImplPtr();
 	}
-	return std::make_shared<VFATFSFileImpl>(*this, fd, normPath.c_str());
+	return std::make_shared<VFATFSFileImpl>(*this, fd, std::move(normPath));
 }
 
 DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 	String normPath;
-	if (!normalizePath(path, normPath)) {
+	if (!normalizePath(path, _partno, normPath)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::openDir] Invalid path\n");
 		return DirImplPtr();
 	}
@@ -436,12 +537,12 @@ DirImplPtr VFATFSImpl::openDir(const char* path, bool create) {
 		ESPFAT_DEBUGV("[VFATFSImpl::opendir] Error %d\n", res);
 		return DirImplPtr();
 	}
-	return std::make_shared<VFATFSDirImpl>(*this, fd, normPath.c_str());
+	return std::make_shared<VFATFSDirImpl>(*this, fd, std::move(normPath));
 }
 
 bool VFATFSImpl::remove(const char* path) {
 	String normPath;
-	if (!normalizePath(path, normPath)) {
+	if (!normalizePath(path, _partno, normPath)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::remove] Invalid path\n");
 		return false;
 	}
@@ -456,12 +557,12 @@ bool VFATFSImpl::remove(const char* path) {
 
 bool VFATFSImpl::rename(const char* pathFrom, const char* pathTo) {
 	String normPathFrom;
-	if (!normalizePath(pathFrom, normPathFrom)) {
+	if (!normalizePath(pathFrom, _partno, normPathFrom)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::rename] Invalid path from\n");
 		return false;
 	}
 	String normPathTo;
-	if (!normalizePath(pathTo, normPathTo)) {
+	if (!normalizePath(pathTo, _partno, normPathTo)) {
 		ESPFAT_DEBUGV("[VFATFSImpl::rename] Invalid path to\n");
 		return false;
 	}
@@ -561,14 +662,14 @@ bool VFATFSFileImpl::truncate() {
 }
 
 time_t VFATFSFileImpl::mtime() const {
-	return _fs.mtime(_pathname.c_str());
+	return _fs.mtime(CSTR_NODRV(_pathname));
 }
 
 bool VFATFSFileImpl::remove() {
 	MUSTNOTCLOSE();
 	close();
 
-	return _fs.remove(_pathname.c_str());
+	return _fs.remove(CSTR_NODRV(_pathname));
 }
 
 bool VFATFSFileImpl::rename(const char *nameTo) {
@@ -577,7 +678,7 @@ bool VFATFSFileImpl::rename(const char *nameTo) {
 
 	String targetPath = pathGetParent(_pathname);
 	pathAppend(targetPath, nameTo);
-	if (_fs.rename(_pathname.c_str(), targetPath.c_str())) {
+	if (_fs.rename(CSTR_NODRV(_pathname), CSTR_NODRV(targetPath))) {
 		_pathname = std::move(targetPath);
 		return true;
 	}
@@ -598,43 +699,43 @@ void VFATFSFileImpl::close() {
 
 FileImplPtr VFATFSDirImpl::openFile(const char *name, OpenMode openMode, AccessMode accessMode) {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.openFile(entrypath.c_str(), openMode, accessMode);
+	return _fs.openFile(CSTR_NODRV(entrypath), openMode, accessMode);
 }
 
 DirImplPtr VFATFSDirImpl::openDir(const char *name, bool create) {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.openDir(entrypath.c_str(), create);
+	return _fs.openDir(CSTR_NODRV(entrypath), create);
 }
 
 bool VFATFSDirImpl::exists(const char *name) const {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.exists(entrypath.c_str());
+	return _fs.exists(CSTR_NODRV(entrypath));
 }
 
 bool VFATFSDirImpl::isDir(const char* name) const {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.isDir(entrypath.c_str());
+	return _fs.isDir(CSTR_NODRV(entrypath));
 }
 
 size_t VFATFSDirImpl::size(const char* name) const {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.size(entrypath.c_str());
+	return _fs.size(CSTR_NODRV(entrypath));
 }
 
 time_t VFATFSDirImpl::mtime(const char* name) const {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.mtime(entrypath.c_str());
+	return _fs.mtime(CSTR_NODRV(entrypath));
 }
 
 bool VFATFSDirImpl::remove(const char *name) {
 	String entrypath = pathJoin(_pathname, name);
-	return _fs.remove(entrypath.c_str());
+	return _fs.remove(CSTR_NODRV(entrypath));
 }
 
 bool VFATFSDirImpl::rename(const char* nameFrom, const char* nameTo) {
 	String entrypathFrom = pathJoin(_pathname, nameFrom);
 	String entrypathTo = pathJoin(_pathname, nameTo);
-	return _fs.rename(entrypathFrom.c_str(),entrypathTo.c_str());
+	return _fs.rename(CSTR_NODRV(entrypathFrom), CSTR_NODRV(entrypathTo));
 }
 
 time_t VFATFSDirImpl::entryMtime() const {
@@ -682,7 +783,7 @@ bool VFATFSDirImpl::renameEntry(const char* nameTo) {
 }
 
 time_t VFATFSDirImpl::mtime() const {
-	return _fs.mtime(_pathname.c_str());
+	return _fs.mtime(CSTR_NODRV(_pathname));
 }
 
 void VFATFSDirImpl::close() {

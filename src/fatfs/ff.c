@@ -5499,7 +5499,14 @@ FRESULT f_forward (
 }
 #endif /* FF_USE_FORWARD */
 
+#if FF_MULTI_PARTITION
 
+#define MBR_HEADS_MIN 	16
+#define MBR_HEADS_MAX 	255
+#define MBR_SECTPERHEAD 63
+#define MBR_CYLN_MAX	1024
+
+#endif
 
 #if FF_USE_MKFS && !FF_FS_READONLY
 /*-----------------------------------------------------------------------*/
@@ -5530,7 +5537,6 @@ FRESULT f_mkfs (
 	DWORD tbl[3];
 #endif
 
-
 	/* Check mounted drive and clear work area */
 	vol = get_ldnumber(&path);					/* Get target logical drive */
 	if (vol < 0) return FR_INVALID_DRIVE;
@@ -5551,6 +5557,19 @@ FRESULT f_mkfs (
 #endif
 	if ((au != 0 && au < ss) || au > 0x1000000 || (au & (au - 1))) return FR_INVALID_PARAMETER;	/* Check if au is valid */
 	au /= ss;	/* Cluster size in unit of sector */
+
+	UINT heads, sz_cyl;
+	DWORD sz_disk;
+	if (disk_ioctl(pdrv, GET_SECTOR_COUNT, &sz_disk) != RES_OK) return FR_DISK_ERR;
+#ifndef FF_EMBEDDED_FLASH
+	/* Determine the CHS without any consideration of the drive geometry */
+	for (heads = MBR_HEADS_MIN; heads < MBR_HEADS_MAX && sz_disk / heads / MBR_SECTPERHEAD > MBR_CYLN_MAX; heads *= 2) ;
+	if (heads > MBR_HEADS_MAX) heads = MBR_HEADS_MAX;
+#else
+	// Embedded flash does not subject to legacy compatibility constraints
+	for (heads = 1; heads < 256 && sz_disk / heads / MBR_SECTPERHEAD > MBR_CYLN_MAX; heads *= 2) ;
+#endif
+	sz_cyl = MBR_SECTPERHEAD * heads;
 
 	/* Get working buffer */
 #if FF_USE_LFN == 3
@@ -5577,10 +5596,13 @@ FRESULT f_mkfs (
 		sz_vol = ld_dword(pte + PTE_SizLba);	/* Get volume size */
 	} else {
 		/* Create a single-partition in this function */
-		if (disk_ioctl(pdrv, GET_SECTOR_COUNT, &sz_vol) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);
+#ifndef FF_EMBEDDED_FLASH
+		b_vol = (opt & FM_SFD) ? 0 : 1;			/* Volume start sector */
+#else
 		b_vol = (opt & FM_SFD) ? 0 : 63;		/* Volume start sector */
-		if (sz_vol < b_vol) LEAVE_MKFS(FR_MKFS_ABORTED);
-		sz_vol -= b_vol;						/* Volume size */
+#endif
+		if (sz_disk < b_vol) LEAVE_MKFS(FR_MKFS_ABORTED);
+		sz_vol = sz_disk - b_vol;				/* Volume size */
 	}
 	if (sz_vol < 128) LEAVE_MKFS(FR_MKFS_ABORTED);	/* Check if volume size is >=128s */
 
@@ -5854,8 +5876,8 @@ FRESULT f_mkfs (
 			st_dword(buf + BPB_TotSec32, sz_vol);		/* Volume size in 32-bit LBA */
 		}
 		buf[BPB_Media] = 0xF8;							/* Media descriptor byte */
-		st_word(buf + BPB_SecPerTrk, 63);				/* Number of sectors per track (for int13) */
-		st_word(buf + BPB_NumHeads, 255);				/* Number of heads (for int13) */
+		st_word(buf + BPB_SecPerTrk, MBR_SECTPERHEAD);	/* Number of sectors per track (for int13) */
+		st_word(buf + BPB_NumHeads, heads);				/* Number of heads (for int13) */
 		st_dword(buf + BPB_HiddSec, b_vol);				/* Volume offset in the physical drive [sector] */
 		if (fmt == FS_FAT32) {
 			st_dword(buf + BS_VolID32, GET_FATTIME());	/* VSN */
@@ -5944,17 +5966,26 @@ FRESULT f_mkfs (
 			mem_set(buf, 0, ss);
 			st_word(buf + BS_55AA, 0xAA55);		/* MBR signature */
 			pte = buf + MBR_Table;				/* Create partition table for single partition in the drive */
-			pte[PTE_Boot] = 0;					/* Boot indicator */
+			st_dword(pte + PTE_StLba, b_vol);	/* Start offset in LBA */
+			st_dword(pte + PTE_SizLba, sz_vol);	/* Size in sectors */
+			pte[PTE_System] = sys;				/* System type */
+
+#ifndef FF_EMBEDDED_FLASH
 			pte[PTE_StHead] = 1;				/* Start head */
 			pte[PTE_StSec] = 1;					/* Start sector */
 			pte[PTE_StCyl] = 0;					/* Start cylinder */
-			pte[PTE_System] = sys;				/* System type */
-			n = (b_vol + sz_vol) / (63 * 255);	/* (End CHS may be invalid) */
-			pte[PTE_EdHead] = 254;				/* End head */
-			pte[PTE_EdSec] = (BYTE)(((n >> 2) & 0xC0) | 63);	/* End sector */
-			pte[PTE_EdCyl] = (BYTE)n;			/* End cylinder */
-			st_dword(pte + PTE_StLba, b_vol);	/* Start offset in LBA */
-			st_dword(pte + PTE_SizLba, sz_vol);	/* Size in sectors */
+#else
+			pte[PTE_StHead] = 0;				/* Start head */
+			pte[PTE_StSec] = 2;					/* Start sector */
+			pte[PTE_StCyl] = 0;					/* Start cylinder */
+#endif
+			UINT pe_cyl = (b_vol+sz_vol-1) % sz_cyl;
+			UINT e_cyl = (b_vol+sz_vol-1) / sz_cyl;
+			if (e_cyl > MBR_CYLN_MAX-1) e_cyl = MBR_CYLN_MAX-1;
+			pte[PTE_EdHead] = pe_cyl/MBR_SECTPERHEAD;	/* End head */
+			pte[PTE_EdSec] = (BYTE)(((e_cyl >> 2) & 0xC0) | (pe_cyl%MBR_SECTPERHEAD)+1);	/* End sector */
+			pte[PTE_EdCyl] = (BYTE)e_cyl;		/* End cylinder */
+
 			if (disk_write(pdrv, buf, 0, 1) != RES_OK) LEAVE_MKFS(FR_DISK_ERR);	/* Write it to the MBR */
 		}
 	}
@@ -5992,7 +6023,7 @@ FRESULT f_fdisk (
 	if (stat & STA_PROTECT) return FR_WRITE_PROTECTED;
 	if (disk_ioctl(pdrv, GET_SECTOR_COUNT, &sz_disk)) return FR_DISK_ERR;
 
-	buf = (BYTE*)work;
+	//buf = (BYTE*)work;
 #if FF_USE_LFN == 3
 	if (!buf) buf = ff_memalloc(FF_MAX_SS);	/* Use heap memory for working buffer */
 #endif
@@ -6072,11 +6103,11 @@ FRESULT f_fdisk (
 		UINT e_cyl = (s_part-1) / sz_cyl;
 		if (e_cyl > MBR_CYLN_MAX-1) e_cyl = MBR_CYLN_MAX-1;
 
-		p[PTE_StHead] = pb_cyl/MBR_SECTPERHEAD;					/* Start head */
+		p[PTE_StHead] = pb_cyl/MBR_SECTPERHEAD;		/* Start head */
 		p[PTE_StSec] = (BYTE)(((b_cyl >> 2) & 0xC0) | (pb_cyl%MBR_SECTPERHEAD)+1);	/* Start sector */
 		p[PTE_StCyl] = (BYTE)b_cyl;					/* Start cylinder */
 		p[PTE_System] = 0x07;						/* System type (temporary setting) */
-		p[PTE_EdHead] = pe_cyl/MBR_SECTPERHEAD;					/* End head */
+		p[PTE_EdHead] = pe_cyl/MBR_SECTPERHEAD;		/* End head */
 		p[PTE_EdSec] = (BYTE)(((e_cyl >> 2) & 0xC0) | (pe_cyl%MBR_SECTPERHEAD)+1);	/* End sector */
 		p[PTE_EdCyl] = (BYTE)e_cyl;					/* End cylinder */
 		//ets_printf("%d: %d %d %d -> %d %d %d\n",

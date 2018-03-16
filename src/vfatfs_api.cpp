@@ -35,7 +35,7 @@ void fattime2unixts(time_t &ts, uint16_t time, uint16_t date) {
 	tpart.tm_min = (time >> 5) & 0x3f;
 	tpart.tm_sec = (time & 0x1f) << 1;
 
-	ESPFAT_DEBUGVV("[VFATFS##fattime2unixts] %d-%02d-%02d %02d:%02d:%02d\n",
+	ESPFAT_DEBUGVV("[VFATFS] FatTime2UnixTS: %d-%02d-%02d %02d:%02d:%02d\n",
 		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
 		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 	ts = mktime(&tpart);
@@ -52,7 +52,7 @@ void unixts2fattime(time_t ts, uint16_t &time, uint16_t &date) {
 	struct tm tpart;
 	gmtime_r(&ts, &tpart);
 
-	ESPFAT_DEBUGVV("[VFATFS##unixts2fattime] %d-%02d-%02d %02d:%02d:%02d\n",
+	ESPFAT_DEBUGVV("[VFATFS] UnixTS2FatTime: %d-%02d-%02d %02d:%02d:%02d\n",
 		tpart.tm_year + 1900, tpart.tm_mon + 1, tpart.tm_mday,
 		tpart.tm_hour, tpart.tm_min, tpart.tm_sec);
 
@@ -61,11 +61,11 @@ void unixts2fattime(time_t ts, uint16_t &time, uint16_t &date) {
 }
 
 bool normalizePath(const char* in, uint8_t partno, String& out) {
-	ESPFAT_DEBUGVV("[VFATFS##normalizePath] Input '%s'\n", in);
+	ESPFAT_DEBUGVV("[VFATFS] NormalizePath - Input '%s'\n", in);
 
 	// All path must start from root
 	if (*in != '/') {
-		ESPFAT_DEBUGV("[VFATFS##normalizePath] Not from root\n");
+		ESPFAT_DEBUGV("[VFATFS] NormalizePath - Not from root\n");
 		return false;
 	}
 
@@ -86,7 +86,7 @@ bool normalizePath(const char* in, uint8_t partno, String& out) {
 				continue;
 			if ((toks[idx][1] == '.') && !toks[idx][2]) {
 				if (!idx) {
-					ESPFAT_DEBUGV("[VFATFS##normalizePath] Token underflow\n");
+					ESPFAT_DEBUGV("[VFATFS] NormalizePath - Token underflow\n");
 					return false;
 				}
 				idx--;
@@ -97,7 +97,7 @@ bool normalizePath(const char* in, uint8_t partno, String& out) {
 	}
 	// Check token overflow
 	if (ptr && *ptr) {
-		ESPFAT_DEBUGV("[VFATFS##normalizePath] Token overflow\n");
+		ESPFAT_DEBUGV("[VFATFS] NormalizePath - Token overflow\n");
 		return false;
 	}
 	out = String(partno)+':';
@@ -108,7 +108,7 @@ bool normalizePath(const char* in, uint8_t partno, String& out) {
 		out.concat(toks[i++]);
 	} while (i < idx);
 
-	ESPFAT_DEBUGVV("[VFATFS##normalizePath] Output '%s'\n",out.c_str());
+	ESPFAT_DEBUGVV("[VFATFS] NormalizePath - Output '%s'\n",out.c_str());
 	return true;
 }
 
@@ -116,16 +116,290 @@ bool normalizePath(const char* in, uint8_t partno, String& out) {
 
 #ifdef ESP8266
 
-#include <spi_flash.h>
+#include "spi_flash.h"
+#include "user_interface.h"
 
 // these symbols should be defined in the linker script for each flash layout
 extern "C" uint32_t _SPIFFS_start;
 extern "C" uint32_t _SPIFFS_end;
 
 #define VFATFS_PHYS_ADDR	\
-	((uint32_t) (&_SPIFFS_start) - 0x40200000)
+	((uint32_t)&_SPIFFS_start - 0x40200000)
 #define VFATFS_PHYS_SIZE	\
-	((uint32_t) (&_SPIFFS_end) - (uint32_t) (&_SPIFFS_start))
+	((uint32_t)&_SPIFFS_end - (uint32_t)&_SPIFFS_start)
+
+#ifdef VFATFS_TRIMCACHE
+
+	// Layer 0: Trimmed; Layer 1: Seen
+	// Meaning:
+	//  Trimmed + Seen = clean
+	//  Trimmed + !Seen = scheduled to clean
+	//  !Trimmed + Seen = dirty
+	//  !Trimmed + !Seen = unknown dirty/clean
+	#if VFATFS_CONSERVE_LEVEL >= 1
+
+		#define TRIMCACHE_LAYERS 2
+
+		#if VFATFS_BGTRIM_INTERVAL
+		static os_timer_t bgtrim_timer = {0};
+		static uint16_t bgidx = 0;
+		static void BackgroundTrim(void *arg);
+		#endif
+
+		static bool ProbeSector(uint16_t sector);
+
+	#else
+
+		#define TRIMCACHE_LAYERS 1
+
+	#endif
+
+	static WORD* TCLayer[TRIMCACHE_LAYERS] = { 0 };
+
+	static PGM_P TCStateToStr(bool L0, bool L1) {
+		if (L0) return L1? PSTR_L("clean") : PSTR_L("to-clean");
+		else return L1? PSTR_L("dirty") : PSTR_L("unknown");
+	}
+
+	static void TrimCacheInit() {
+		if (!TCLayer[0]) {
+			uint16_t sectCnt = VFATFS_PHYS_SIZE / VFATFS_SECTOR_SIZE;
+			uint16_t mapSize = 2*((sectCnt+15) / 16);
+			ESPFAT_DEBUGV("[VFATFS] %d sectors, TrimCache[#%d]\n",
+				sectCnt, TRIMCACHE_LAYERS*mapSize);
+			BYTE* TRIMCACHE = (BYTE*) malloc(TRIMCACHE_LAYERS*mapSize);
+			if (TRIMCACHE) {
+				memset(TRIMCACHE, 0, TRIMCACHE_LAYERS*mapSize);
+				TCLayer[0] = (uint16_t*)TRIMCACHE;
+	#if VFATFS_CONSERVE_LEVEL >= 1
+				TCLayer[1] = (uint16_t*)(TRIMCACHE+mapSize);
+		#if VFATFS_BGTRIM_INTERVAL
+				os_timer_setfn(&bgtrim_timer, &BackgroundTrim, nullptr);
+				os_timer_arm(&bgtrim_timer, VFATFS_BGTRIM_INTERVAL, true);
+		#endif
+	#endif
+			} else {
+				ESPFAT_DEBUG("[VFATFS] Failed to allocate trim cache!\n");
+			}
+		}
+	}
+
+	#if VFATFS_CONSERVE_LEVEL >= 1
+
+	static bool ProbeSector(uint16_t sector) {
+		uint32_t ProbeData[VFATFS_PROBE_UNIT/4];
+		uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
+		size_t size = VFATFS_SECTOR_SIZE;
+
+		while (size) {
+			int ret = spi_flash_read(addr, (uint32_t*)ProbeData, VFATFS_PROBE_UNIT);
+			if (ret != 0) {
+				ESPFAT_DEBUG("[VFATFS] TrimCache[%d] probe failed!\n", sector);
+				break;
+			}
+			ret = VFATFS_PROBE_UNIT/4;
+			while (ret--) if (ProbeData[ret]+1) break;
+			if (ret >= 0) break;
+			addr += VFATFS_PROBE_UNIT;
+			size -= VFATFS_PROBE_UNIT;
+		}
+		ESPFAT_DEBUGVV("[VFATFS] TrimCache[%d] -> %s\n", sector,
+			SFPSTR(TCStateToStr(!size, true)));
+		return !size;
+	}
+
+		#if VFATFS_BGTRIM_INTERVAL
+
+		static void BackgroundTrim(void *arg) {
+			//ESPFAT_DEBUGVV("[VFATFS] BGTRIM TrimCache[#%d]\n", bgidx);
+			uint16_t L0States = TCLayer[0][bgidx];
+			uint16_t L1States = TCLayer[1][bgidx];
+
+			uint16_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE;
+			uint16_t sector = bgidx*16;
+
+			int count = 0;
+			uint16_t bitIdx = 1;
+			while (bitIdx) {
+				if (sector+count >= VFATFS_PHYS_SIZE/VFATFS_SECTOR_SIZE) {
+					// Wrap around for next pass
+					bgidx = 0;
+					return;
+				}
+				// We only work when sector is not seen
+				if (!(L1States&bitIdx)) {
+					if (L0States&bitIdx) {
+						// Scheduled for erase
+						ESPFAT_DEBUGVV("[VFATFS] E #%d\n", sector+count);
+						int ret = spi_flash_erase_sector(erase_base+sector+count);
+						if (ret != 0) {
+							ESPFAT_DEBUG("[VFATFS] Erase of #%d failed!\n", sector+count);
+						} else {
+							// Mark as seen
+							TCLayer[1][bgidx] |= bitIdx;
+						}
+					} else {
+						// Unknown dirty/clean
+						if (ProbeSector(sector+count)) {
+							// Mark as clean
+							TCLayer[0][bgidx] |= bitIdx;
+						}
+						// Mark as seen
+						TCLayer[1][bgidx] |= bitIdx;
+					}
+				}
+				bitIdx <<= 1;
+				count++;
+			}
+			bgidx++;
+			system_soft_wdt_feed();
+		}
+
+		#endif
+
+	#else
+
+		#define L1State (true)
+
+	#endif
+
+
+	// intent: >0 pre-write; =0 pre-trim; <0 pre-read
+	static bool TrimCacheLookup(uint16_t sector, int8_t intent) {
+		if (!TCLayer[0]) {
+			ESPFAT_DEBUG("[VFATFS] TrimCache not available!\n");
+			return false;
+		}
+		ESPFAT_DEBUGDO(if (sector >= VFATFS_PHYS_SIZE/VFATFS_SECTOR_SIZE) {
+			ESPFAT_DEBUG("[VFATFS] TrimCache[%d]: out-of-range\n", sector);
+			return false;
+		});
+		uint16_t wordIdx = sector / 16;
+		uint16_t bitIdx = 1 << (sector % 16);
+
+		bool L0State = TCLayer[0][wordIdx]&bitIdx;
+	#if VFATFS_CONSERVE_LEVEL >= 1
+		bool L1State = TCLayer[1][wordIdx]&bitIdx;
+	#endif
+		ESPFAT_DEBUGVV("[VFATFS] TrimCache[%d] => %s\n", sector,
+			SFPSTR(TCStateToStr(L0State, L1State)));
+
+		if (L0State) {
+			// Trimmed or scheduled to trim
+			if (intent > 0) {
+				ESPFAT_DEBUGVV("[VFATFS] TrimCache[%d] <= %s\n", sector,
+					SFPSTR(TCStateToStr(false, true)));
+				TCLayer[0][wordIdx] &= ~bitIdx;
+	#if VFATFS_CONSERVE_LEVEL >= 1
+				TCLayer[1][wordIdx] |= bitIdx;
+	#endif
+			}
+			// For pre-read: trimmed or scheduled means hit;
+			// For others: if seen means hit, otherwise not
+			return intent < 0 ? true : L1State;
+		} else {
+			// Seen and dirty
+			if (L1State) return false;
+		}
+
+	#if VFATFS_CONSERVE_LEVEL >= 1
+		// Mark as seen
+		TCLayer[1][wordIdx] |= bitIdx;
+		// Probe sector data
+		return ProbeSector(sector)
+			// Actually clean but not marked so
+			? (intent > 0? true : TCLayer[0][wordIdx] |= bitIdx)
+			// Actually not clean
+			: false;
+	#endif
+	}
+
+	static void TrimCacheClearPrep(uint16_t sector, uint16_t count) {
+		if (!TCLayer[0]) {
+			ESPFAT_DEBUG("[VFATFS] TrimCache not available!\n");
+			return;
+		}
+		ESPFAT_DEBUGDO(if (sector+count >= VFATFS_PHYS_SIZE/VFATFS_SECTOR_SIZE) {
+			ESPFAT_DEBUG("[VFATFS] TrimCache[%d]: out-of-range\n", sector);
+			return;
+		});
+#if !VFATFS_BGTRIM_INTERVAL
+		uint16_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE;
+	#if VFATFS_LAZY_TRIM
+		uint16_t trimlimit = VFATFS_LAZY_TRIM;
+	#endif
+		bool prolonged = (count > 16);
+		if (prolonged) system_soft_wdt_stop();
+		else system_soft_wdt_feed();
+#endif
+		uint16_t wordIdx = sector / 16;
+		uint16_t bitIdx = 1 << (sector % 16);
+		while (count--) {
+			bool L0State = TCLayer[0][wordIdx]&bitIdx;
+#if VFATFS_CONSERVE_LEVEL >= 1
+			bool L1State = TCLayer[1][wordIdx]&bitIdx;
+#endif
+
+#if VFATFS_BGTRIM_INTERVAL
+			// If known clean or already scheduled clean, do nothing
+			if (!L0State) {
+				// Otherwise, if unknown clean/dirty, probe now
+				if (!L1State && ProbeSector(sector)) {
+					// It is clean, just update cache
+					TCLayer[0][wordIdx] |= bitIdx;
+					TCLayer[1][wordIdx] |= bitIdx;
+				} else {
+					// Confirmed dirty, schedule clean
+					ESPFAT_DEBUGVV("[VFATFS] TrimCache[%d] <= %s\n", sector,
+						SFPSTR(TCStateToStr(true, false)));
+					TCLayer[0][wordIdx] |= bitIdx;
+					TCLayer[1][wordIdx] &= ~bitIdx;
+				}
+			}
+#else
+			// No background trimming, need to erase now
+			// If confirmed cleaned, do nothing
+			if (!L0State || !L1State) {
+	#if VFATFS_CONSERVE_LEVEL >= 1
+				// Otherwise, if unknown clean/dirty, probe now
+				if (!L1State && ProbeSector(sector)) {
+					// It is clean, just update cache
+					TCLayer[0][wordIdx] |= bitIdx;
+					TCLayer[1][wordIdx] |= bitIdx;
+				} else
+	#endif
+				{
+					// Confirmed dirty, do erase
+					ESPFAT_DEBUGVV("[VFATFS] E #%d\n", sector);
+					int ret = spi_flash_erase_sector(erase_base+sector);
+					if (ret != 0) {
+						ESPFAT_DEBUG("[VFATFS] Erase of #%d failed!\n", sector);
+					} else {
+						TCLayer[0][wordIdx] |= bitIdx;
+					}
+	#if VFATFS_LAZY_TRIM
+					if (!--trimlimit) {
+						ESPFAT_DEBUGV("[VFATFS] Lazy trim stopped, %d uncheck!\n",
+							count);
+						break;
+					}
+	#endif
+				}
+			}
+#endif
+			// Move to the next sector
+			sector++;
+			if (!(bitIdx <<= 1)) {
+				bitIdx = 1;
+				wordIdx++;
+			}
+		}
+#if !VFATFS_BGTRIM_INTERVAL
+		if (prolonged) system_soft_wdt_restart();
+#endif
+	}
+
+#endif
 
 /*-----------------------------------------------------------------------*/
 /* Initialize a Drive																										*/
@@ -136,6 +410,10 @@ DSTATUS disk_initialize (
 ) {
 	if (pdrv != 0)
 		return STA_NODISK;
+
+#ifdef VFATFS_TRIMCACHE
+	TrimCacheInit();
+#endif
 	return 0;
 }
 
@@ -164,12 +442,35 @@ DRESULT disk_read (
 	if (pdrv != 0)
 		return RES_PARERR;
 
-	uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
-	uint32_t size = count * VFATFS_SECTOR_SIZE;
+	ESPFAT_DEBUGV("[VFATFS] Reading @%d (%d)\n", sector, count);
+	bool prolonged = (count > 16);
+	if (prolonged) system_soft_wdt_stop();
+	else system_soft_wdt_feed();
 
-	ESPFAT_DEBUGVV("[VFATF##disk_read] R 0x%lX 0x%X\n", addr, size);
-	int32_t ret = spi_flash_read(addr, (uint32*)buff, size);
-	return ret == SPI_FLASH_RESULT_OK? RES_OK : RES_ERROR;
+	int ret;
+	uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
+	while (count--) {
+#ifdef VFATFS_TRIMCACHE
+		if (TrimCacheLookup(sector++, -1)) {
+			// Sector was trimmed, just fill the space
+			ESPFAT_DEBUGVV("[VFATFS] C #%d\n", sector-1);
+			memset(buff, 0xff, VFATFS_SECTOR_SIZE);
+		} else // Otherwise,
+#else
+		sector++;
+#endif
+		{
+			// Perform actual read if sector is not trimmed
+			ESPFAT_DEBUGVV("[VFATFS] R #%d\n", sector-1);
+			ret = spi_flash_read(addr, (uint32_t*)buff, VFATFS_SECTOR_SIZE);
+			if (ret != 0) break;
+		}
+		addr+= VFATFS_SECTOR_SIZE;
+		buff+= VFATFS_SECTOR_SIZE;
+	}
+	if (prolonged) system_soft_wdt_restart();
+
+	return (count+1) ? RES_ERROR : RES_OK;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -185,19 +486,54 @@ DRESULT disk_write (
 	if (pdrv != 0)
 		return RES_PARERR;
 
+	ESPFAT_DEBUGV("[VFATFS] Writing @%d (%d)\n", sector, count);
+	bool prolonged = (count > 8);
+	if (prolonged) system_soft_wdt_stop();
+	else system_soft_wdt_feed();
+
+	int ret;
+	uint16_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE;
 	uint32_t addr = VFATFS_PHYS_ADDR + sector * VFATFS_SECTOR_SIZE;
-	uint32_t size = count * VFATFS_SECTOR_SIZE;
-
-	ESPFAT_DEBUGVV("[VFATFS##disk_write] E 0x%lX 0x%X\n", addr, size);
-	uint32_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE + sector;
 	while (count--) {
-		int32_t ret = spi_flash_erase_sector(erase_base+count);
-		if (ret != SPI_FLASH_RESULT_OK) return RES_ERROR;
+#ifdef VFATFS_TRIMCACHE
+	#if VFATFS_CONSERVE_LEVEL >= 2
+		// Test if write is all 1 bits (no need to write)
+		ret = VFATFS_SECTOR_SIZE/4;
+		while (ret--) if (((uint32_t*)buff)[ret]+1) break;
+		bool __needwrite__ = (ret >= 0);
+		if (!TrimCacheLookup(sector++, __needwrite__?1:0))
+	#else
+		if (!TrimCacheLookup(sector++, 1))
+	#endif
+#else
+		sector++;
+#endif
+		{
+			// Need to erase before write
+			ESPFAT_DEBUGVV("[VFATFS] E #%d\n", sector-1);
+			ret = spi_flash_erase_sector(erase_base+sector-1);
+			if (ret != 0) break;
+		}
+#ifdef VFATFS_TRIMCACHE
+	#if VFATFS_CONSERVE_LEVEL >= 2
+		if (!__needwrite__) {
+			// No need to actually write anything
+			ESPFAT_DEBUGVV("[VFATFS] C #%d\n", sector-1);
+		} else
+	#endif
+#endif
+		{
+			// Perform actual write
+			ESPFAT_DEBUGVV("[VFATFS] W #%d\n", sector-1);
+			ret = spi_flash_write(addr, (uint32_t*)buff, VFATFS_SECTOR_SIZE);
+			if (ret != 0) break;
+		}
+		addr+= VFATFS_SECTOR_SIZE;
+		buff+= VFATFS_SECTOR_SIZE;
 	}
+	if (prolonged) system_soft_wdt_restart();
 
-	ESPFAT_DEBUGVV("[VFATFS##disk_write] W 0x%lX 0x%X\n", addr, size);
-	int32_t ret = spi_flash_write(addr, (uint32*)buff, size);
-	return ret == SPI_FLASH_RESULT_OK? RES_OK : RES_ERROR;
+	return (count+1) ? RES_ERROR : RES_OK;
 }
 
 /*-----------------------------------------------------------------------*/
@@ -231,19 +567,16 @@ DRESULT disk_ioctl (
 			return RES_OK;
 
 		case CTRL_TRIM:
+#ifdef VFATFS_TRIMCACHE
 			DWORD *range = (DWORD*)buff;
-			uint32_t erase_base = VFATFS_PHYS_ADDR/VFATFS_SECTOR_SIZE + range[0];
-			uint16_t count = range[1]-range[0];
-			ESPFAT_DEBUGV("[VFATF::disk_ioctl] Trim #%d of %d sectors!\n",
-				erase_base, count);
-			while (count--) {
-				int32_t ret = spi_flash_erase_sector(erase_base+count);
-				if (ret != SPI_FLASH_RESULT_OK) return RES_ERROR;
-			}
+			ESPFAT_DEBUGV("[VFATFS] Trimming @[%d, %d]\n", range[0], range[1]);
+			uint32_t count = range[1] - range[0] + 1;
+			TrimCacheClearPrep(range[0], count);
+#endif
 			return RES_OK;
 	}
 
-	ESPFAT_DEBUGV("[VFATFS##disk_ioctl] Unhandled %d\n", cmd);
+	ESPFAT_DEBUG("[VFATFS] Unhandled Disk IOCTL - %d\n", cmd);
 	return RES_PARERR;
 }
 
@@ -284,41 +617,41 @@ PARTITION VolToPart[FF_VOLUMES] = {
 	{0, 4}      /* "3:" ==> Physical drive 0, 4th partition */
 };
 
-DWORD VFATFSPartitions::_size[4] = { 100, 0, 0, 0 };
-uint8_t VFATFSPartitions::_opencnt = 0;
+DWORD VFATPartitions::_size[4] = { 100, 0, 0, 0 };
+uint8_t VFATPartitions::_opencnt = 0;
 
-bool VFATFSPartitions::create() {
+bool VFATPartitions::create() {
 	if (_opencnt) {
-		ESPFAT_DEBUGV("[VFATFSPartitions::create] There are %d mounted partitions!\n",
+		ESPFAT_DEBUGV("[VFATPartitions::create] There are %d mounted partitions!\n",
 			_opencnt);
 		return false;
 	}
 
-	ESPFAT_DEBUGVV("[VFATFSPartitions::create] In progress...\n");
+	ESPFAT_DEBUGVV("[VFATPartitions::create] In progress...\n");
 	FRESULT res = f_fdisk(0, _size, nullptr);
 	if (res != FR_OK) {
-		ESPFAT_DEBUGV("[VFATFSPartitions::create] Error %d\n", res);
+		ESPFAT_DEBUGV("[VFATPartitions::create] Error %d\n", res);
 		return false;
 	}
-	ESPFAT_DEBUGVV("[VFATFSPartitions::create] Done\n");
+	ESPFAT_DEBUGVV("[VFATPartitions::create] Done\n");
 
 	return true;
 }
 
-bool VFATFSPartitions::config(uint8_t A, uint8_t B, uint8_t C, uint8_t D) {
+bool VFATPartitions::config(uint8_t A, uint8_t B, uint8_t C, uint8_t D) {
 	if (_opencnt) {
-		ESPFAT_DEBUGV("[VFATFSPartitions::config] There are %d mounted partitions!\n",
+		ESPFAT_DEBUGV("[VFATPartitions::config] There are %d mounted partitions!\n",
 			_opencnt);
 		return false;
 	}
 
 	if (A + B + C + D > 100) {
-		ESPFAT_DEBUGV("[VFATFSPartitions::config] Invalid partition sizes "
+		ESPFAT_DEBUGV("[VFATPartitions::config] Invalid partition sizes "
 			"(%d%% + %d%% + %d%% + %d%% > 100%%)\n", A, B, C, D);
 		return false;
 	}
 	if (A + B + C + D < 100) {
-		ESPFAT_DEBUG("[VFATFSPartitions::config] Partitions do not fill disk "
+		ESPFAT_DEBUG("[VFATPartitions::config] Partitions do not fill disk "
 		"(%d%% + %d%% + %d%% + %d%% < 100%%)\n", A, B, C, D);
 	}
 
@@ -341,7 +674,7 @@ bool VFATFSImpl::mount() {
 		return false;
 	}
 	_mounted = true;
-	uint8_t mountCnt = ++VFATFSPartitions::_opencnt;
+	uint8_t mountCnt = ++VFATPartitions::_opencnt;
 	ESPFAT_DEBUGVV("[VFATFSImpl::mount] Mounted %s (#%d)\n",
 		DrvRoot.c_str(), mountCnt);
 	return true;
@@ -358,7 +691,7 @@ bool VFATFSImpl::unmount() {
 		return false;
 	}
 	_mounted = false;
-	uint8_t mountCnt = --VFATFSPartitions::_opencnt;
+	uint8_t mountCnt = --VFATPartitions::_opencnt;
 	ESPFAT_DEBUGVV("[VFATFSImpl::unmount] Unmounted %s (#%d)\n",
 		DrvRoot.c_str(), mountCnt);
 	return true;
@@ -367,7 +700,7 @@ bool VFATFSImpl::unmount() {
 bool VFATFSImpl::begin() {
 	if (_mounted) return true;
 
-	if (!VFATFSPartitions::_size[_partno]) {
+	if (!VFATPartitions::_size[_partno]) {
 		ESPFAT_DEBUGV("[VFATFSImpl::begin] Partition #%d not enabled\n",
 			_partno);
 		return false;
@@ -376,7 +709,7 @@ bool VFATFSImpl::begin() {
 	if (mount()) return true;
 	if (format()) return mount();
 
-	if (VFATFSPartitions::create()) {
+	if (VFATPartitions::create()) {
 		if (mount()) return true;
 		if (format()) return mount();
 	}

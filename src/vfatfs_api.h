@@ -22,7 +22,7 @@
 	License along with this library; if not, write to the Free Software
 	Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA
  */
-//#include <limits>
+
 #include "FS.h"
 
 #include "FSImpl.h"
@@ -62,15 +62,65 @@
 
 #include "fatfs/ff.h"
 
-#define VFATFS_PHYS_BLOCK		4096
-#define VFATFS_SECT_PER_PHYS	1			// HAL layer does not handle partial erase
+#include <flash_utils.h>
+
+#define VFATFS_PHYS_BLOCK		FLASH_SECTOR_SIZE
+#define VFATFS_SECT_PER_PHYS	1	// HAL layer does not handle partial erase
 #define VFATFS_SECTOR_SIZE		(VFATFS_PHYS_BLOCK/VFATFS_SECT_PER_PHYS)
+
+// Enable in-memory cache of trimmed sectors
+// Required to actually enable trim support
+// Consumes heap space, but benefits read/write performance and flash longevity
+#define VFATFS_TRIMCACHE
+
+#ifdef VFATFS_TRIMCACHE
+
+	// Flash conserve levels:
+	//  0 - Not conservative (fastest, incurs unnecessary flash wears after reboot)
+	//  1 - Avoid redundant trim (slower read/write after reboot + some stack for sector probing)
+	//  2 - Avoid all '1' write mark sector dirty write (even slower write)
+	//  3 - Avoid unnecessary erase/write (extra VFATFS_SECTOR_SIZE heap space)
+	//  * Level 3 not implemented yet!
+	#define VFATFS_CONSERVE_LEVEL	1
+
+	// Heap consumption:
+	// Level 0: ~64 bytes per 1MB (~1KB for 16MB)
+	// Level 1,2: ~128 bytes per 1MB (~2KB for 16MB)
+	// Level 3: (Level 1,2) + ~4KB
+
+	#if VFATFS_CONSERVE_LEVEL >= 1
+
+		// How much stack can be use for sector probing
+		// Must be multiple of 4
+		//  and integer divisor of VFATFS_SECTOR_SIZE
+		//  and small enough to NOT overflow stack
+		//  and large enough to have good efficiency
+		#define VFATFS_PROBE_UNIT (VFATFS_SECTOR_SIZE/16)
+
+		// Non-zero interval enables background trimming
+		// Each time check/trim up to 16 sectors
+		// Hint: significantly improves trim request performance
+		#define VFATFS_BGTRIM_INTERVAL 100
+
+	#endif
+
+	#if !VFATFS_BGTRIM_INTERVAL
+
+		// None-zero enables "lazy" trimming
+		// For each trim request, erase up to given number of sectors
+		//  and the rest is ignored.
+		// This improves response time at very large trim request
+		#define VFATFS_LAZY_TRIM 16
+
+	#endif
+
+#endif
 
 using namespace fs;
 
 class VFATFSImpl;
 
-class VFATFSPartitions {
+class VFATPartitions {
 friend class VFATFSImpl;
 protected:
 	static DWORD _size[4];

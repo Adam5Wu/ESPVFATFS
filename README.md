@@ -26,6 +26,17 @@ However, currently Arduino for ESP8266 provides only SPIFFS as backing file syst
 
 Inspired by the ESP8266 [MicroPython project](https://github.com/Adam5Wu/ESPAsyncWebServer), this library provides a wrapper to use [FatFs](http://elm-chan.org/fsw/ff/00index_e.html) on the internal flash storage of ESP8266, which resolves the above mentioned limitations.
 
+## Implemented Features
+
+- Standard file system features:
+  - Real directories
+  - Long file names
+  - File modification time
+- **Multi-partition support**: Up to 4 partitions, great storage management flexibility
+- **Support trim command**: Improve write performance
+  - **In-memory clear sector cache**: Reduce unnecessary erases
+  - **Background erase**: Significantly improves trim responsiveness
+
 ## How to use
 
 Install the library - clone this repo into the "libraries" folder in your Arduino projects (found in your home / document directory).

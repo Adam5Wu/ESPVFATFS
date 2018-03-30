@@ -33,9 +33,9 @@ Inspired by the ESP8266 [MicroPython project](https://github.com/Adam5Wu/ESPAsyn
   - Long file names
   - File modification time
 - **Multi-partition support**: Up to 4 partitions, great storage management flexibility
-- **Support trim command**: Improve write performance
+- **TRIM command support**: Improve write performance
   - **In-memory clear sector cache**: Reduce unnecessary erases
-  - **Background erase**: Significantly improves trim responsiveness
+  - **Background erase**: Significantly improves TRIM responsiveness
 
 ## How to use
 

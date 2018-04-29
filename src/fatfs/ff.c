@@ -2682,7 +2682,7 @@ void get_fileinfo (
 #endif
 
 
-	fno->fname[0] = 0;			/* Invaidate file info */
+	fno->fname[0] = 0;			/* Invalidate file info */
 	if (dp->sect == 0) return;	/* Exit if read pointer has reached end of directory */
 
 #if FF_USE_LFN		/* LFN configuration */
@@ -6638,9 +6638,9 @@ FRESULT f_setcp (
 	CodePage = cp;
 	if (cp >= 900) {	/* DBCS */
 		ExCvt = 0;
-		DbcTbl = pgm_read_ptr(tables+i);
+		DbcTbl = tables[i]; //pgm_read_ptr(tables+i);
 	} else {			/* SBCS */
-		ExCvt = pgm_read_ptr(tables+i);
+		ExCvt = tables[i]; //pgm_read_ptr(tables+i);
 		DbcTbl = 0;
 	}
 	return FR_OK;

@@ -15408,7 +15408,7 @@ WCHAR ff_uni2oem (	/* Returns OEM code character, zero on error */
 			p = 0;
 			if (cp < 900) {	/* SBCS */
 				for (i = 0; cp_code[i] != 0 && cp_code[i] != cp; i++) ;		/* Get table */
-				p = pgm_read_ptr(cp_table+i);
+				p = cp_table[i]; //pgm_read_ptr(cp_table+i);
 				if (p) {	/* Is it a valid CP ? */
 					for (c = 0; c < 0x80 && uc != p[c]; c++) ;	/* Find OEM code in the table */
 					c = (c + 0x80) & 0xFF;
@@ -15458,7 +15458,7 @@ WCHAR ff_oem2uni (	/* Returns Unicode character, zero on error */
 		p = 0;
 		if (cp < 900) {	/* SBCS */
 			for (i = 0; cp_code[i] != 0 && cp_code[i] != cp; i++) ;		/* Get table */
-			p = pgm_read_ptr(cp_table+i);
+			p = cp_table[i]; //pgm_read_ptr(cp_table+i);
 			if (p) {	/* Is it a valid CP ? */
 				if (oem < 0x100) c = p[oem - 0x80];
 			}
